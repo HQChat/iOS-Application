@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>com.apple.security.app-sandbox</key>
+		<true />
+		<!-- Not sharing anything: this is the app's OWN default group, and
+		     declaring it is what makes Xcode provision an application
+		     identifier. Without one the app cannot reach the data protection
+		     keychain, which is the only keychain that can hold a Secure Enclave
+		     key — so message bodies could not be sealed on macOS at all
+		     (-34018). The built app was signed with no identifier of any kind;
+		     `codesign -d --entitlements -` on it showed the sandbox flags and
+		     nothing else. -->
+		<key>keychain-access-groups</key>
+		<array>
+			<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
+		</array>
+		<key>com.apple.security.device.audio-input</key>
+		<true />
+		<key>com.apple.security.device.camera</key>
+		<true />
+		<key>com.apple.security.files.user-selected.read-only</key>
+		<true />
+		<key>com.apple.security.network.client</key>
+		<true />
+	</dict>
+</plist>

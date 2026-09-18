@@ -1,0 +1,101 @@
+# Xcode
+#
+# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+
+## User settings
+xcuserdata/
+
+## Obj-C/Swift specific
+*.hmap
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+#
+# Add this line if you want to avoid checking in source code from Swift Package Manager dependencies.
+# Packages/
+# Package.pins
+# Package.resolved
+# *.xcodeproj
+#
+# Xcode automatically generates this directory with a .xcworkspacedata file and xcuserdata
+# hence it is not needed unless you have added a package configuration file to your project
+# .swiftpm
+
+.build/
+
+# CocoaPods
+#
+# We recommend against adding the Pods directory to your .gitignore. However
+# you should judge for yourself, the pros and cons are mentioned at:
+# https://guides.cocoapods.org/using/using-cocoapods.html#should-i-check-the-pods-directory-into-source-control
+#
+# Pods/
+#
+# Add this line if you want to avoid checking in source code from the Xcode workspace
+# *.xcworkspace
+
+# Carthage
+#
+# Add this line if you want to avoid checking in source code from Carthage dependencies.
+# Carthage/Checkouts
+
+Carthage/Build/
+
+# fastlane
+#
+# It is recommended to not store the screenshots in the git repo.
+# Instead, use fastlane to re-generate the screenshots whenever they are needed.
+# For more information about the recommended setup visit:
+# https://docs.fastlane.tools/best-practices/source-control/#source-control
+
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+.DS_Store
+node_modules/
+.env
+.env.prod
+.env.local
+# Deployment secrets — provided on the VM / materialized from GitHub, never committed
+infra/deploy/server.env
+infra/deploy/secrets/
+infra/deploy/apple.env
+infra/deploy/preprod/server.env
+infra/deploy/preprod/secrets/
+# Local/CI database credentials for the throwaway postgres container. Not secret
+# — they reach a container on a laptop — but a committed connection URI trips
+# every secret scanner, so they are generated instead:
+#   sh infra/deploy/local-secrets/generate.sh
+infra/deploy/local-secrets/database_url
+infra/deploy/local-secrets/database_url_direct
+infra/deploy/local-secrets/pg_ca_cert
+infra/deploy/local-secrets/emqx_pg
+
+# Wrangler writes an account cache holding the Cloudflare account id + owner
+# email. It was committed once (audit finding INFRA-2); never again.
+.wrangler/
+# Helper bot identity + per-friend keys — never commit
+.bot-seed
+.bot-state.json
+appstore/screenshots/
+UserInterfaceState.xcuserstate
+
+# TLS material. The Cloudflare origin certificate and its key get downloaded to
+# a working directory to be installed with infra/nixos/install-origin-cert.sh,
+# and a `git add -A` from that directory committed the private half to a branch.
+# Nothing here is ever a repo artefact.
+*.key
+*.pem
+!**/*.pub
+apps/apple/tests/.coverage/
+apps/apple/.build/

@@ -1,0 +1,5 @@
+# Build products and findings. The CORPUS is committed (see README) — it is the
+# accumulated knowledge of the fuzzer and the thing that makes a rerun useful.
+build/
+findings/
+current-input.bin

@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# Refuse to push changes under apps/apple/ that `verify.sh` has not covered.
+#
+# WHY. There is deliberately no macOS runner in this repo — at the 10x billing
+# multiplier it was 84% of the entire Actions bill — so `apps/apple/verify.sh` is
+# the whole Apple gate: the Swift suites, both app builds, the UI tests, three
+# differential fuzzers and the file-bus simulation. None of it runs in CI. A gate
+# nobody is reminded to run is a gate that stops being run, and the PR goes green
+# having tested none of it.
+#
+# verify.sh writes apps/apple/.build/verify-stamp with the commit it verified (or
+# the word "dirty" if the tree was not clean). This hook reads it.
+#
+# INSTALL (opt-in — hooks are not version-controlled, so this is a deliberate act):
+#
+#   git config core.hooksPath apps/apple/hooks
+#
+# BYPASS, when you mean it:
+#
+#   SKIP_APPLE_VERIFY=1 git push
+#   git push --no-verify          # skips every hook, not just this one
+set -euo pipefail
+
+[ "${SKIP_APPLE_VERIFY:-0}" = "1" ] && exit 0
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+STAMP="$REPO_ROOT/apps/apple/.build/verify-stamp"
+ZERO="0000000000000000000000000000000000000000"
+
+fail() {
+  echo "" >&2
+  echo "❌ apps/apple changed, but verify.sh has not verified $1" >&2
+  echo "" >&2
+  echo "   bash apps/apple/verify.sh" >&2
+  echo "" >&2
+  echo "   The Apple suites do not run in CI — this gate is local, so nothing" >&2
+  echo "   else will catch it. To push anyway: SKIP_APPLE_VERIFY=1 git push" >&2
+  echo "" >&2
+  exit 1
+}
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one line per ref.
+while read -r _localref localsha _remoteref remotesha; do
+  [ "$localsha" = "$ZERO" ] && continue          # branch deletion
+
+  if [ "$remotesha" = "$ZERO" ]; then
+    # New branch: compare against origin/main if we have it, else the whole diff
+    # would be every commit ever, which is not a useful question to ask.
+    base="$(git merge-base "$localsha" origin/main 2>/dev/null || echo "")"
+    [ -z "$base" ] && continue
+  else
+    base="$remotesha"
+  fi
+
+  touched="$(git diff --name-only "$base" "$localsha" -- apps/apple/ 2>/dev/null || true)"
+  # The hook itself and this directory are not part of what verify.sh checks.
+  touched="$(printf '%s\n' "$touched" | grep -v '^apps/apple/hooks/' || true)"
+  [ -z "$touched" ] && continue
+
+  [ -f "$STAMP" ] || fail "anything yet (no stamp at apps/apple/.build/verify-stamp)"
+
+  stamped="$(cat "$STAMP")"
+  [ "$stamped" = "dirty" ] && fail "a clean tree (it last ran with uncommitted changes)"
+  [ "$stamped" = "$localsha" ] || fail "$(git rev-parse --short "$localsha") (stamp is ${stamped:0:7})"
+done
+
+exit 0

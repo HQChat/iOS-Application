@@ -1,0 +1,786 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		5E27A00000000000000004 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 5E27A00000000000000002 /* Sentry */; };
+		5E27A00000000000000005 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 5E27A00000000000000003 /* Sentry */; };
+		D96B8E742EF6F4380063D07E /* libhqc_wrap.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = D96B8E732EF6F4380063D07E /* libhqc_wrap.dylib */; };
+		D96B8E762EF6F47B0063D07E /* libhqc_wrap.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = D96B8E732EF6F4380063D07E /* libhqc_wrap.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		D9C0DE000000000000000002 /* HQC.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9C0DE000000000000000001 /* HQC.xcframework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		DDE2E0000000000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D96B8E562EF6EB4D0063D07E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D96CE2E12FDC9750004125B6;
+			remoteInfo = "DissQus iOS";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D96B8E752EF6F4640063D07E /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				D96B8E762EF6F47B0063D07E /* libhqc_wrap.dylib in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		D96B8E5E2EF6EB4D0063D07E /* DissQus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DissQus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D96B8E732EF6F4380063D07E /* libhqc_wrap.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libhqc_wrap.dylib; sourceTree = "<group>"; };
+		D96CE2E22FDC9750004125B6 /* DissQus iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "DissQus iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D9C0DE000000000000000001 /* HQC.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = HQC.xcframework; path = ../../native/hqc/dist/apple/HQC.xcframework; sourceTree = "<group>"; };
+		DDE2E0000000000000000002 /* DissQusUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DissQusUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D96CE3072FDC9A29004125B6 /* Exceptions for "DissQus" folder in "DissQus iOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AppState.swift,
+				ContentView.swift,
+				Deployment.swift,
+				Core/testHQC.swift,
+				Helpers/Observability.swift,
+				Helpers/PlatformColors.swift,
+				Helpers/ProtocolLog.swift,
+				Helpers/Redaction.swift,
+				Helpers/StatusPresentation.swift,
+				Helpers/Theme.swift,
+				Helpers/UsernameRule.swift,
+				Models/AppError.swift,
+				Models/Friend.swift,
+				Models/Message.swift,
+				Models/MessageTypes.swift,
+				Models/Profile.swift,
+				Persistence.swift,
+				Services/AESService.swift,
+				Services/APIClient.swift,
+				Services/AuthService.swift,
+				Services/BiometricAudit.swift,
+				Services/BiometricCoordinator.swift,
+				Services/MQTTService.swift,
+				Services/MQTTTopics.swift,
+				Services/ChatSession.swift,
+				Services/ConversationRouter.swift,
+				Services/DirectorySync.swift,
+				Services/MQTTWireClient.swift,
+				Services/TLSPinning.swift,
+				Services/DataResetService.swift,
+				Services/DeviceAuthCapability.swift,
+				Services/FriendService.swift,
+				Services/HQCService.swift,
+				Services/IdentityManager.swift,
+				Services/KeyFingerprint.swift,
+				Services/MessageKeyStore.swift,
+				Services/NotificationService.swift,
+				Services/StoreMigration.swift,
+				Services/ProfileManager.swift,
+				Services/PushManager.swift,
+				Services/DoubleRatchet.swift,
+				Services/RatchetSession.swift,
+				Services/HQCKem.swift,
+				Services/PeerID.swift,
+				Services/PrekeyService.swift,
+				Services/ConversationEnvelopeV3.swift,
+				Services/ConversationFrame.swift,
+				Services/Handshake.swift,
+				Services/Reachability.swift,
+				Services/UserService.swift,
+				Views/ChatView.swift,
+				Views/ChatListView.swift,
+				Views/FriendListView.swift,
+				Views/ContactRows.swift,
+				Views/ContactsView.swift,
+				Views/AddContactView.swift,
+				Views/KeyVerification.swift,
+				Views/LoadingView.swift,
+				Views/ProfileSelectionView.swift,
+				Views/ProtocolLogView.swift,
+				Views/RootTabView.swift,
+				Views/AccountSettingsView.swift,
+				Views/SecuritySettingsView.swift,
+				Views/SettingsView.swift,
+			);
+			target = D96CE2E12FDC9750004125B6 /* DissQus iOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		D96CE3082FDC9A29004125B6 /* Exceptions for "DissQus" folder in "Compile Sources" phase from "DissQus iOS" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = D96CE2DE2FDC9750004125B6 /* Sources */;
+			membershipExceptions = (
+				"Core/HQC-Bridging-Header.h",
+				Core/public_wrapper.h,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		D96B8E602EF6EB4D0063D07E /* DissQus */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D96CE3072FDC9A29004125B6 /* Exceptions for "DissQus" folder in "DissQus iOS" target */,
+				D96CE3082FDC9A29004125B6 /* Exceptions for "DissQus" folder in "Compile Sources" phase from "DissQus iOS" target */,
+			);
+			path = DissQus;
+			sourceTree = "<group>";
+		};
+		D96CE2E32FDC9750004125B6 /* DissQus iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "DissQus iOS";
+			sourceTree = "<group>";
+		};
+		DDE2E0000000000000000003 /* DissQusUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DissQusUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D96B8E5B2EF6EB4D0063D07E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D96B8E742EF6F4380063D07E /* libhqc_wrap.dylib in Frameworks */,
+				5E27A00000000000000004 /* Sentry in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D96CE2DF2FDC9750004125B6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D9C0DE000000000000000002 /* HQC.xcframework in Frameworks */,
+				5E27A00000000000000005 /* Sentry in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DDE2E0000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D96B8E552EF6EB4D0063D07E = {
+			isa = PBXGroup;
+			children = (
+				D96B8E602EF6EB4D0063D07E /* DissQus */,
+				D96CE2E32FDC9750004125B6 /* DissQus iOS */,
+				DDE2E0000000000000000003 /* DissQusUITests */,
+				D96B8E722EF6F3560063D07E /* Frameworks */,
+				D96B8E5F2EF6EB4D0063D07E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D96B8E5F2EF6EB4D0063D07E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D96B8E5E2EF6EB4D0063D07E /* DissQus.app */,
+				D96CE2E22FDC9750004125B6 /* DissQus iOS.app */,
+				DDE2E0000000000000000002 /* DissQusUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D96B8E722EF6F3560063D07E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				D96B8E732EF6F4380063D07E /* libhqc_wrap.dylib */,
+				D9C0DE000000000000000001 /* HQC.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D96B8E5D2EF6EB4D0063D07E /* DissQus */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D96B8E6F2EF6EB4F0063D07E /* Build configuration list for PBXNativeTarget "DissQus" */;
+			buildPhases = (
+				D96B8E5A2EF6EB4D0063D07E /* Sources */,
+				D96B8E5B2EF6EB4D0063D07E /* Frameworks */,
+				D96B8E5C2EF6EB4D0063D07E /* Resources */,
+				D96B8E752EF6F4640063D07E /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D96B8E602EF6EB4D0063D07E /* DissQus */,
+			);
+			name = DissQus;
+			packageProductDependencies = (
+				5E27A00000000000000002 /* Sentry */,
+			);
+			productName = DissQus;
+			productReference = D96B8E5E2EF6EB4D0063D07E /* DissQus.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D96CE2E12FDC9750004125B6 /* DissQus iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D96CE2EE2FDC9751004125B6 /* Build configuration list for PBXNativeTarget "DissQus iOS" */;
+			buildPhases = (
+				D96CE2DE2FDC9750004125B6 /* Sources */,
+				D96CE2DF2FDC9750004125B6 /* Frameworks */,
+				D96CE2E02FDC9750004125B6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D96CE2E32FDC9750004125B6 /* DissQus iOS */,
+			);
+			name = "DissQus iOS";
+			packageProductDependencies = (
+				5E27A00000000000000003 /* Sentry */,
+			);
+			productName = "DissQus iOS";
+			productReference = D96CE2E22FDC9750004125B6 /* DissQus iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DDE2E0000000000000000001 /* DissQusUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DDE2E0000000000000000009 /* Build configuration list for PBXNativeTarget "DissQusUITests" */;
+			buildPhases = (
+				DDE2E0000000000000000004 /* Sources */,
+				DDE2E0000000000000000005 /* Frameworks */,
+				DDE2E0000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DDE2E0000000000000000008 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DDE2E0000000000000000003 /* DissQusUITests */,
+			);
+			name = DissQusUITests;
+			packageProductDependencies = (
+			);
+			productName = DissQusUITests;
+			productReference = DDE2E0000000000000000002 /* DissQusUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D96B8E562EF6EB4D0063D07E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					D96B8E5D2EF6EB4D0063D07E = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					D96CE2E12FDC9750004125B6 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					DDE2E0000000000000000001 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = D96CE2E12FDC9750004125B6;
+					};
+				};
+			};
+			buildConfigurationList = D96B8E592EF6EB4D0063D07E /* Build configuration list for PBXProject "DissQus" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D96B8E552EF6EB4D0063D07E;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5E27A00000000000000001 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D96B8E5F2EF6EB4D0063D07E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D96B8E5D2EF6EB4D0063D07E /* DissQus */,
+				D96CE2E12FDC9750004125B6 /* DissQus iOS */,
+				DDE2E0000000000000000001 /* DissQusUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D96B8E5C2EF6EB4D0063D07E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D96CE2E02FDC9750004125B6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DDE2E0000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D96B8E5A2EF6EB4D0063D07E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D96CE2DE2FDC9750004125B6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DDE2E0000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DDE2E0000000000000000008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D96CE2E12FDC9750004125B6 /* DissQus iOS */;
+			targetProxy = DDE2E0000000000000000007 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		D96B8E6D2EF6EB4F0063D07E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D96B8E6E2EF6EB4F0063D07E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.5;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		D96B8E702EF6EB4F0063D07E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DissQus/DissQus.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = 2K837KD8A7;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSCameraUsageDescription = "DissQus uses the camera for encrypted video calls.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DissQus needs microphone access for voice messages and encrypted voice calls.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = martin.rougeron.DissQus;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";
+				REGISTER_APP_GROUPS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				"SWIFT_OBJC_BRIDGING_HEADER[arch=arm64]" = "DissQus/Core/HQC-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D96B8E712EF6EB4F0063D07E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = DissQus/DissQus.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = 2K837KD8A7;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
+				INFOPLIST_KEY_NSCameraUsageDescription = "DissQus uses the camera for encrypted video calls.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DissQus needs microphone access for voice messages and encrypted voice calls.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = martin.rougeron.DissQus;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "";
+				REGISTER_APP_GROUPS = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				"SWIFT_OBJC_BRIDGING_HEADER[arch=arm64]" = "DissQus/Core/HQC-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		D96CE2EC2FDC9751004125B6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "DissQus iOS/DissQus_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				"INFOPLIST_KEY_CFBundleDisplayName[sdk=*]" = hqChad;
+				INFOPLIST_KEY_NSCameraUsageDescription = "DissQus uses the camera for encrypted video calls.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "DissQus uses Face ID to unlock your private encryption keys so only you can access your messages.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DissQus needs microphone access for voice messages and encrypted voice calls.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				MARKETING_VERSION = 2.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "martin.rougeron.DissQus-iOS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "DissQus/Core/HQC-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D96CE2ED2FDC9751004125B6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "DissQus iOS/DissQus_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				"INFOPLIST_KEY_CFBundleDisplayName[sdk=*]" = hqChat;
+				INFOPLIST_KEY_NSCameraUsageDescription = "DissQus uses the camera for encrypted video calls.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "DissQus uses Face ID to unlock your private encryption keys so only you can access your messages.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DissQus needs microphone access for voice messages and encrypted voice calls.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)",
+				);
+				MARKETING_VERSION = 2.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "martin.rougeron.DissQus-iOS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "DissQus/Core/HQC-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		DDE2E000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = martin.rougeron.DissQusUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "DissQus iOS";
+			};
+			name = Debug;
+		};
+		DDE2E000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2K837KD8A7;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = martin.rougeron.DissQusUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "DissQus iOS";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D96B8E592EF6EB4D0063D07E /* Build configuration list for PBXProject "DissQus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D96B8E6D2EF6EB4F0063D07E /* Debug */,
+				D96B8E6E2EF6EB4F0063D07E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D96B8E6F2EF6EB4F0063D07E /* Build configuration list for PBXNativeTarget "DissQus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D96B8E702EF6EB4F0063D07E /* Debug */,
+				D96B8E712EF6EB4F0063D07E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D96CE2EE2FDC9751004125B6 /* Build configuration list for PBXNativeTarget "DissQus iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D96CE2EC2FDC9751004125B6 /* Debug */,
+				D96CE2ED2FDC9751004125B6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DDE2E0000000000000000009 /* Build configuration list for PBXNativeTarget "DissQusUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DDE2E000000000000000000A /* Debug */,
+				DDE2E000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5E27A00000000000000001 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5E27A00000000000000002 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5E27A00000000000000001 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+		5E27A00000000000000003 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5E27A00000000000000001 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = D96B8E562EF6EB4D0063D07E /* Project object */;
+}

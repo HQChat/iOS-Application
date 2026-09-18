@@ -1,0 +1,34 @@
+# Skip census — how many checks each Swift suite is ALLOWED not to run.
+#
+# A skipped check is coverage that left. `TestSupport.finish()` used to print a
+# warning and exit 0 anyway, so a guarantee could stop being tested and the gate
+# would stay green. This file is the expectation it is measured against:
+#
+#   more skips than listed  → the suite FAILS
+#   fewer skips than listed → a note; tighten the number here
+#
+# Read by run.sh, which exports EXPECTED_SKIPS before each suite. A suite with
+# no line here is allowed ZERO skips, which is the right default for a new one.
+#
+# Every non-zero entry needs a reason and a route to zero. All of these are
+# MAS-9 in docs/audits/masvs.md: they need a SIGNED build on real hardware, so
+# they go to zero under `verify.sh --device` rather than by changing the test.
+#
+# format: <suite>\t<allowed skips>\t<reason>
+
+MessageAtRestTests	3	Secure Enclave key cannot be created in an unsigned headless binary (-25308) or the Simulator (-25293)
+KeyProtectionTierTests	3	an unsigned binary has no keychain access group, so the marker WRITE is refused (-34018) while reads still work
+
+# NOT read by run.sh — the XCUITest bundle is run by xcodebuild from verify.sh,
+# which has no skip census. Recorded here anyway so the whole cost of MAS-9
+# sits in one file, and so raising this number is a visible act.
+#
+# These two used to FAIL rather than skip, and because they were the only
+# failures, verify.sh exited 65 on any Mac without a device build. The Apple
+# gate is the only gate on the apps, and a permanently red one cannot do its
+# actual job: telling you that what you just changed broke something. They now
+# skip via `requireSignedBuild()` in DissQusUITests.swift, which turns on
+# TEST_RUNNER_HQCAT_UNSIGNED from verify.sh rather than on a runtime probe: their
+# blocker is -34018 (no keychain access group in an unsigned build), the same one
+# KeyProtectionTierTests has, NOT the -25308/-25293 Enclave-absence one above.
+DissQusUITests	2	testOpenConversationShowsSeededMessages and testCreatingProfileEntersTheApp both need an Enclave-backed key, which an unsigned build cannot create: no keychain access group, SecKeyCreateRandomKey -34018
