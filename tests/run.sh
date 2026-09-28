@@ -113,6 +113,57 @@ xcrun swiftc -O $COV_FLAGS \
 "$BINDIR/peerIdTests" "$(cd "$(dirname "$ID_VECTORS")" && pwd)/$(basename "$ID_VECTORS")"
 
 echo ""
+echo "── MQTT connect proof (cross-impl vectors) ────"
+# The v1 CONNECT password is signed here and verified by the auth hook; one
+# byte of disagreement and every CONNECT is refused with only "deny" to show
+# for it. Read from the server's vector file, like the identifier vectors.
+PROOF_VECTORS="../../../services/server/test/helpers/mqtt-proof-vectors.json"
+if [ ! -f "$PROOF_VECTORS" ]; then
+  echo "❌ missing $PROOF_VECTORS — regenerate with:"
+  echo "   npx tsx scripts/gen-mqtt-proof-vectors.ts > test/helpers/mqtt-proof-vectors.json"
+  exit 1
+fi
+MAIN="$(stage MQTTProofTests.swift)"
+xcrun swiftc -O $COV_FLAGS \
+  "$MAIN" TestSupport.swift \
+  "$SRC/MQTTConnectProof.swift" \
+  -o "$BINDIR/mqttProofTests"
+"$BINDIR/mqttProofTests" "$(cd "$(dirname "$PROOF_VECTORS")" && pwd)/$(basename "$PROOF_VECTORS")"
+
+echo ""
+echo "── hqn/1 Noise handshake (cross-impl vectors) ─"
+# The raw-TCP transport's handshake. The gateway runs the TypeScript half
+# (services/server/lib/noise.ts); the vectors pin every byte between them.
+NOISE_VECTORS="../../../services/server/test/helpers/noise-hqn-vectors.json"
+if [ ! -f "$NOISE_VECTORS" ]; then
+  echo "❌ missing $NOISE_VECTORS — regenerate with:"
+  echo "   npx tsx scripts/gen-noise-hqn-vectors.ts > test/helpers/noise-hqn-vectors.json"
+  exit 1
+fi
+MAIN="$(stage NoiseHQNTests.swift)"
+xcrun swiftc -O $COV_FLAGS -target arm64-apple-macos13 \
+  "$MAIN" TestSupport.swift \
+  "$SRC/NoiseHQN.swift" "$SRC/HQCService.swift" \
+  -import-objc-header "$APP/Core/HQC-Bridging-Header.h" -I "$APP/Core" \
+  -L ".." -lhqc_wrap -Xlinker -rpath -Xlinker "$(cd .. && pwd)" \
+  -o "$BINDIR/noiseHqnTests"
+"$BINDIR/noiseHqnTests" "$(cd "$(dirname "$NOISE_VECTORS")" && pwd)/$(basename "$NOISE_VECTORS")" \
+  "$(cd "$(dirname "$NOISE_VECTORS")" && pwd)/noise-nk-cacophony.json"
+
+echo ""
+echo "── MQTT transport selection ───────────────────"
+MAIN="$(stage TransportTests.swift)"
+xcrun swiftc -O $COV_FLAGS -target arm64-apple-macos13 \
+  "$MAIN" TestSupport.swift \
+  "$SRC/MQTTTransport.swift" "$SRC/NoiseHQN.swift" "$SRC/TLSPinning.swift" "$APP/Deployment.swift" \
+  "$SRC/HQCService.swift" \
+  -import-objc-header "$APP/Core/HQC-Bridging-Header.h" -I "$APP/Core" \
+  -L ".." -lhqc_wrap -Xlinker -rpath -Xlinker "$(cd .. && pwd)" \
+  -framework Security \
+  -o "$BINDIR/transportTests"
+"$BINDIR/transportTests"
+
+echo ""
 echo "── MQTT topic routing tests ───────────────────"
 MAIN="$(stage MQTTTopicsTests.swift)"
 xcrun swiftc -O $COV_FLAGS \
@@ -125,10 +176,19 @@ echo ""
 echo "── MQTT wire codec tests ──────────────────────"
 MAIN="$(stage MQTTWireTests.swift)"
 xcrun swiftc -O $COV_FLAGS \
-  "$MAIN" TestSupport.swift Stubs.swift \
-  "$SRC/MQTTWireClient.swift" \
+  "$MAIN" TestSupport.swift Stubs.swift TransportStubs.swift \
+  "$SRC/MQTTWireClient.swift" "$SRC/MQTTTransport.swift" "$SRC/NoiseHQN.swift" \
   -o "$BINDIR/mqttWireTests"
 "$BINDIR/mqttWireTests"
+
+echo ""
+echo "── Network path change rule ───────────────────"
+MAIN="$(stage ReachabilityTests.swift)"
+xcrun swiftc -O $COV_FLAGS \
+  "$MAIN" \
+  "$SRC/Reachability.swift" \
+  -o "$BINDIR/reachabilityTests"
+"$BINDIR/reachabilityTests"
 
 echo ""
 echo "── Double ratchet v2 (cross-impl vectors) ─────"
@@ -280,7 +340,9 @@ xcrun swiftc -O $COV_FLAGS -target arm64-apple-macos14 \
   "$SRC/DeviceAuthCapability.swift" "$SRC/IdentityManager.swift" \
   "$SRC/BiometricCoordinator.swift" "$SRC/HQCService.swift" "$SRC/HQCKem.swift" \
   "$SRC/PrekeyService.swift" "$SRC/APIClient.swift" "$SRC/AuthService.swift" \
+  "$SRC/MQTTConnectProof.swift" \
   "$SRC/TLSPinning.swift" "$APP/Deployment.swift" "$HELPERS/ProtocolLog.swift" \
+  "$SRC/NoiseHQN.swift" \
   "$SRC/StoreMigration.swift" "$SRC/DataResetService.swift" "$SRC/ProfileManager.swift" \
   -import-objc-header "$APP/Core/HQC-Bridging-Header.h" -I "$APP/Core" \
   -L ".." -lhqc_wrap -Xlinker -rpath -Xlinker "$(cd .. && pwd)" \
@@ -311,8 +373,8 @@ echo "── MQTT codec: the refusals ──────────────
 # forever.
 MAIN="$(stage MQTTCodecEdgeTests.swift)"
 xcrun swiftc -O $COV_FLAGS \
-  "$MAIN" TestSupport.swift Stubs.swift \
-  "$SRC/MQTTWireClient.swift" \
+  "$MAIN" TestSupport.swift Stubs.swift TransportStubs.swift \
+  "$SRC/MQTTWireClient.swift" "$SRC/MQTTTransport.swift" "$SRC/NoiseHQN.swift" \
   -o "$BINDIR/mqttCodecEdgeTests"
 "$BINDIR/mqttCodecEdgeTests"
 
@@ -343,8 +405,10 @@ MAIN="$(stage APIClientTests.swift)"
 xcrun swiftc -O $COV_FLAGS -target arm64-apple-macos13 \
   "$MAIN" TestSupport.swift \
   "$SRC/APIClient.swift" "$SRC/AuthService.swift" "$SRC/TLSPinning.swift" \
+  "$SRC/MQTTConnectProof.swift" \
   "$SRC/AESService.swift" "$SRC/BiometricAudit.swift" \
   "$SRC/HQCService.swift" "$SRC/PeerID.swift" "../DissQus/Deployment.swift" \
+  "$SRC/NoiseHQN.swift" \
   -import-objc-header "../DissQus/Core/HQC-Bridging-Header.h" \
   -I "../DissQus/Core" \
   -L ".." -lhqc_wrap \
@@ -385,7 +449,7 @@ gen_pin_fixture ec384   -newkey ec -pkeyopt ec_paramgen_curve:secp384r1
 MAIN="$(stage TLSPinningTests.swift)"
 xcrun swiftc -O $COV_FLAGS \
   "$MAIN" TestSupport.swift \
-  "$SRC/TLSPinning.swift" "../DissQus/Deployment.swift" \
+  "$SRC/TLSPinning.swift" "../DissQus/Deployment.swift" "$SRC/NoiseHQN.swift" \
   -framework Security \
   -o "$BINDIR/tlsPinningTests"
 "$BINDIR/tlsPinningTests" "$PIN_FIXTURES"

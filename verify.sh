@@ -197,6 +197,19 @@ bash fuzz/run.sh handshake-verdict
       --iterations "${FUZZ_HANDSHAKE_ITERATIONS:-20000}" --seed "${FUZZ_SEED:-$RANDOM}" --mode "$m" || exit 1; \
   done)
 
+#   hqn/1 — the raw-TCP transport's Noise handshake and framing. The pinned
+#   vectors cover VALID transcripts; this covers the input an attacker controls:
+#   frame streams cut anywhere, mutated server replies (Swift and TypeScript
+#   must refuse the same ones), and — TypeScript only — the gateway's responder,
+#   which must refuse every hostile msg1 without a single unexpected exception.
+step "hqn/1 differential fuzz (Swift ↔ TypeScript)"
+bash fuzz/run.sh noise-verdict
+(cd ../../services/server && \
+  for m in frames msg2 responder; do \
+    npx tsx test/fuzz/noise-differential.ts \
+      --iterations "${FUZZ_NOISE_ITERATIONS:-20000}" --seed "${FUZZ_SEED:-$RANDOM}" --mode "$m" || exit 1; \
+  done)
+
 # 8. A whole interaction, through the real Swift implementation.
 #
 #    Everything above tests a layer at a time. This runs first contact to a

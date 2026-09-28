@@ -46,6 +46,7 @@ protocol MQTTBackend: AnyObject {
     func publish(_ topic: String, payload: Data, qos: Int, retained: Bool,
                  onWrite: ((Bool) -> Void)?)
     func disconnect()
+    func abandonLink()
 }
 
 final class TLSPinningDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {

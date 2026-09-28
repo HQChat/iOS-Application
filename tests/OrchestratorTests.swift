@@ -35,6 +35,8 @@ final class FakeBackend: MQTTBackend, @unchecked Sendable {
                  willTopic: String, willPayload: Data,
                  onEvent: @escaping (MQTTEvent) -> Void) {
         connectArgs = (clientID, username, willTopic, willPayload)
+        connectURLs.append(url)
+        passwords.append(password)
         self.onEvent = onEvent
     }
     func subscribe(_ topic: String, qos: Int) { subscribed.append((topic, qos)) }
@@ -44,6 +46,15 @@ final class FakeBackend: MQTTBackend, @unchecked Sendable {
         onWrite?(true)
     }
     func disconnect() { disconnects += 1 }
+    var connectURLs: [URL] = []
+    var passwords: [String] = []
+    var abandons = 0
+    /// When set, abandoning a link reports it the way the real client does.
+    var abandonReportsDisconnect = false
+    func abandonLink() {
+        abandons += 1
+        if abandonReportsDisconnect { onEvent?(.disconnected(URLError(.timedOut))) }
+    }
 
     /// Drive an inbound event, the way the real adapter would.
     func deliver(_ e: MQTTEvent) { onEvent?(e) }
@@ -387,5 +398,84 @@ func vanishedGuardSkipsBlocked() {
           + "the guard is just a disabled check")
 }
 MainActor.assumeIsolated { vanishedGuardSkipsBlocked() }
+
+// ── Transport fallback: hqn/1 first, WSS last, one attempt at a time ─────────
+//
+// MQTTService walks TransportSelector's plan. Each attempt signs its OWN
+// CONNECT (the proof's nonce is single-use), a failed attempt with another to
+// come must not reach the app as a disconnect (it would start the reconnect
+// loop underneath the fallback), and a blocked network is remembered.
+
+print("")
+print("transport fallback")
+do {
+    let x = Data(repeating: 7, count: 32).base64EncodedString()
+    let q = Data(repeating: 9, count: NoiseHQN.hqcPublicKeyBytes).base64EncodedString()
+    let gw = HQNEndpoint.parse(["host": "gw.test", "port": 443, "keys": [["keyId": 1, "x25519": x, "hqc": q]]])!
+    ServerConfig.setDiscoveredHQN(gw, enabled: true, for: ServerConfig.host)
+
+    // 1. The gateway refuses outright: straight to WSS, silently.
+    let fb = FakeBackend()
+    let selector = TransportSelector(rememberFor: 3600, minDeadline: 5, maxDeadline: 5)
+    let svc = MQTTService(backend: fb, auth: auth, selector: selector)
+    var reported: [Bool] = []
+    sem { await svc.setConnectionHandler { up, _ in reported.append(up) } }
+    let done = DispatchSemaphore(value: 0)
+    var outcome: Error?? = nil
+    Task { do { try await svc.connect(id: ME); outcome = .some(nil) } catch { outcome = .some(error) }; done.signal() }
+    Thread.sleep(forTimeInterval: 0.3)
+    check(fb.connectURLs.first?.scheme == "hqn", "hqn/1 is tried first when the server has a gateway")
+    fb.deliver(.disconnected(URLError(.cannotConnectToHost)))
+    Thread.sleep(forTimeInterval: 0.3)
+    check(fb.connectURLs.count == 2 && fb.connectURLs.last?.scheme == "wss", "…then WSS, at once")
+    // Against this stub server (no v1 key id) each attempt refreshes its own
+    // token; against a v1 server each signs its own proof.
+    check(fb.passwords.count == 2, "each attempt obtains its own credential")
+    check(!reported.contains(false), "the failed hqn attempt is NOT reported as a disconnect")
+    fb.deliver(.connected)
+    check(done.wait(timeout: .now() + 3) == .success, "the connect completes over WSS")
+    if case .some(.none) = outcome { check(true, "without an error") } else { check(false, "without an error") }
+    let next = selector.plan(hqn: gw, wss: ServerConfig.mqttURL, network: Reachability.currentNetworkKey)
+    check(next.map(\.kind) == [.wss], "and this network now goes straight to WSS")
+    sem { await svc.disconnect() }
+
+    // 2. A blackholed gateway: nothing answers, the deadline abandons it.
+    let fb2 = FakeBackend()
+    fb2.abandonReportsDisconnect = true
+    let svc2 = MQTTService(backend: fb2, auth: auth,
+                           selector: TransportSelector(rememberFor: 3600, minDeadline: 0.4, maxDeadline: 0.4))
+    let done2 = DispatchSemaphore(value: 0)
+    let t0 = Date()
+    Task { _ = try? await svc2.connect(id: ME); done2.signal() }
+    Thread.sleep(forTimeInterval: 0.2)
+    check(fb2.connectURLs.count == 1, "the hqn attempt waits out its deadline")
+    Thread.sleep(forTimeInterval: 0.5)
+    check(fb2.abandons == 1 && fb2.connectURLs.last?.scheme == "wss",
+          "…then the half-open link is abandoned and WSS starts")
+    fb2.deliver(.connected)
+    check(done2.wait(timeout: .now() + 3) == .success && Date().timeIntervalSince(t0) < 2,
+          "a blackholed port costs one deadline, not a timeout")
+    sem { await svc2.disconnect() }
+
+    // 3. Refused credentials are not a transport problem: no fallback.
+    let fb3 = FakeBackend()
+    let svc3 = MQTTService(backend: fb3, auth: auth, selector: TransportSelector())
+    let done3 = DispatchSemaphore(value: 0)
+    var err3: Error?
+    Task { do { try await svc3.connect(id: ME) } catch { err3 = error }; done3.signal() }
+    Thread.sleep(forTimeInterval: 0.3)
+    fb3.deliver(.disconnected(MQTTWireClient.MQTTError.connectionRefused(5)))
+    check(done3.wait(timeout: .now() + 3) == .success, "a refused CONNECT ends the connect")
+    check(fb3.connectURLs.count == 1 && err3 != nil, "…without trying WSS — it would be refused the same way")
+
+    // 4. The kill switch.
+    ServerConfig.setDiscoveredHQN(gw, enabled: false, for: ServerConfig.host)
+    let fb4 = FakeBackend()
+    let svc4 = MQTTService(backend: fb4, auth: auth, selector: TransportSelector())
+    Task { _ = try? await svc4.connect(id: ME) }
+    Thread.sleep(forTimeInterval: 0.3)
+    check(fb4.connectURLs.map(\.scheme) == ["wss"], "with the server's switch off, only WSS is tried")
+    fb4.deliver(.connected)
+}
 
 finish()

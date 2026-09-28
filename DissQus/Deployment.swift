@@ -30,11 +30,25 @@ enum Deployment {
     /// self-hoster's choice, not a stale default.
     static let serverHost = "api.hqchat.app"
 
-    /// Where the published legal pages live.
+    /// The host the marketing and legal pages are served on.
     ///
-    /// Derived from `serverHost` again. It was briefly a constant of its own,
-    /// for the window in which the site had moved to hqchat.app and the API had
-    /// not; there is one host now, so a second constant could only drift.
+    /// ⚠️ THIS IS NOT `serverHost`, AND DERIVING IT FROM ONE WAS A BUG.
+    ///
+    /// There was a window in which the site and the API shared the apex, and
+    /// during it `siteURL` was derived from `serverHost` and this constant was
+    /// deleted as a thing that could only drift. Then the API moved back to
+    /// `api.` and the derivation silently followed it — which pointed all four
+    /// URLs below at `api.hqchat.app/…`, where the marketing Worker is not
+    /// routed and nginx answers a REST 404. The EULA link a reviewer opens was
+    /// one of them.
+    ///
+    /// They are two hosts because they are two different things: the apex is
+    /// the Cloudflare Worker that serves the pages, `api.` is the origin that
+    /// answers the app. A fork changes both.
+    static let siteHost = "hqchat.app"
+
+    /// Where the published legal pages live. A fork changes `siteHost` and
+    /// these follow it.
     ///
     /// ⚠️ Each path below must appear in `worker_paths`
     /// (`infra/cloudflare/variables.tf`), which takes EXACT paths and rejects
@@ -43,9 +57,7 @@ enum Deployment {
     /// link rather than a missing route. The EULA URL in particular is one App
     /// Store Connect fetches, so it is checked by a site test that reads the
     /// Terraform file rather than by anybody noticing.
-    ///
-    /// A fork changes `serverHost` and this follows it.
-    static var siteURL: URL { URL(string: "https://\(serverHost)")! }
+    static var siteURL: URL { URL(string: "https://\(siteHost)")! }
     static var eulaURL: URL { siteURL.appendingPathComponent("eula") }
     static var privacyURL: URL { siteURL.appendingPathComponent("privacy") }
     static var termsURL: URL { siteURL.appendingPathComponent("terms") }
@@ -70,6 +82,20 @@ enum Deployment {
     ///
     /// Overridable per build with the Info.plist array `ServerPinnedSPKIHashes`.
     static let pinnedSPKIHashes: [String] = []
+
+    /// The default server's hqn/1 gateway (raw-TCP transport): host, port and
+    /// the gateway's public static keys, pinned. EMPTY until the gateway is
+    /// deployed — the build then relies on `GET /auth/transport` discovery, and
+    /// with nothing discovered every connect stays on WSS. Fill from
+    /// `scripts/noise-gw-keys.ts --public` output, current AND next key id.
+    static let hqnHost: String? = nil
+    static let hqnPort: UInt16 = 443
+    static let hqnKeys: [NoiseHQN.ServerKeys] = []
+
+    static func hqnEndpoint(forHost host: String) -> HQNEndpoint? {
+        guard host == serverHost, let h = hqnHost, !hqnKeys.isEmpty else { return nil }
+        return HQNEndpoint(host: h, port: hqnPort, keys: hqnKeys)
+    }
 
     /// Sentry DSN. Deliberately EMPTY in the repo: crash reporting is opt-in per
     /// build (Info.plist `SENTRY_DSN`), so a fork or a local build never posts to

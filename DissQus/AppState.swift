@@ -144,6 +144,17 @@ class AppState: ObservableObject {
             if case .offline = self.connectionStatus {
                 self.connectionStatus = .connecting
             }
+            self.wakeReconnect()
+        }
+        reachability.onInterfaceChanged = { [weak self] in
+            guard let self else { return }
+            print("[AppState] 📶 Network interface changed — dropping the link")
+            // A live link is bound to the old interface's address and can look
+            // healthy for minutes; dropping it now routes through
+            // handleDisconnect into the reconnect loop. A loop already running
+            // just skips the rest of its backoff.
+            self.wakeReconnect()
+            Task { await self.session.networkPathChanged() }
         }
     }
 
@@ -152,6 +163,9 @@ class AppState: ObservableObject {
     @Published var isReconnecting = false
     fileprivate var reconnectAttempt = 0
     fileprivate var reconnectTask: Task<Void, Never>?
+    /// Set to cut the current backoff short: the network just came back or
+    /// moved, so the reason for waiting is gone.
+    private var backoffWakeRequested = false
     private static let maxReconnectDelay: Double = 30.0
     /// How long to wait for the auth handshake after a socket reconnects.
     private static let authGrace: TimeInterval = 10.0
@@ -586,7 +600,7 @@ class AppState: ObservableObject {
                 // Full jitter: uniform in [0, ceiling].
                 let delay = Double.random(in: 0...ceiling)
                 print("[AppState] 🔄 Reconnect attempt \(self.reconnectAttempt + 1) in \(String(format: "%.1f", delay))s")
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                await self.backoff(seconds: delay)
                 if Task.isCancelled { break }
                 self.reconnectAttempt += 1
 
@@ -611,6 +625,23 @@ class AppState: ObservableObject {
                 if Task.isCancelled { break }
             }
         }
+    }
+
+    /// The network came back or moved: retry now rather than finish a backoff
+    /// that was sized for the network we no longer have.
+    private func wakeReconnect() {
+        guard reconnectTask != nil else { return }
+        reconnectAttempt = 0
+        backoffWakeRequested = true
+    }
+
+    /// Backoff sleep that `wakeReconnect` can cut short.
+    private func backoff(seconds: Double) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline, !backoffWakeRequested, !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        backoffWakeRequested = false
     }
 
     /// Polls for the auth handshake to complete, up to `timeout`. Replaces a

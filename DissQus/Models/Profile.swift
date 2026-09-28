@@ -62,7 +62,13 @@ final class Profile {
     var serverHost: String? {
         guard let raw = serverURL?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else { return nil }
-        if let url = URL(string: raw), let host = url.host, !host.isEmpty { return host }
+        // The port is part of the server's identity, not decoration: a home
+        // server on a non-default port (a self-hosted box, the local e2e stack)
+        // was silently pointed at :443 when only `url.host` was kept.
+        if let url = URL(string: raw), let host = url.host, !host.isEmpty {
+            if let port = url.port { return "\(host):\(port)" }
+            return host
+        }
         // Bare host (possibly with a path) — take the first component.
         return raw.split(separator: "/").first.map(String.init)
     }

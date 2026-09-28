@@ -264,6 +264,13 @@ final class ChatSession: ObservableObject {
         stopDirectoryPoll()
     }
 
+    /// The network path moved (Wi-Fi to cellular, a new address). Drop the MQTT
+    /// link rather than wait for the dead socket to notice; the disconnect it
+    /// reports runs the ordinary reconnect.
+    func networkPathChanged() async {
+        await mqtt.abandonLink()
+    }
+
     func logout() async {
         await disconnect()
         await auth.logout()

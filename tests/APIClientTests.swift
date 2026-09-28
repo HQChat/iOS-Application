@@ -227,4 +227,123 @@ runAsync {
           + "so it has no business in an access log or a proxy cache")
 }
 
+// ── The MQTT CONNECT password (v1 proof) ─────────────────────────────────────
+//
+// The point of the proof is that a reconnect needs NO round trip: the password
+// is signed locally with a key registered at sign-in or refresh. These pin that
+// — and the two ways back to the network: a key about to expire, and a server
+// that predates v1.
+
+let MQTT_ID = String(repeating: "cd", count: 32)
+
+func authSession() async -> AuthService {
+    let auth = AuthService(session: stubbedSession())
+    await auth.__setSessionForTesting(.init(
+        pk: String(repeating: "ab", count: 32), username: "alice", scope: .premium,
+        sessionToken: TOKEN, mqttToken: "legacy-token",
+        mqttExpiresAt: Date().timeIntervalSince1970 + 3600))
+    return auth
+}
+
+func refreshReply(keyID: String?, keyExpiresIn: TimeInterval = 3600, serverSkew: TimeInterval = 0) -> StubProtocol.Reply {
+    let now = Date().timeIntervalSince1970
+    var body = #"{"mqttToken":"rotated-token","scope":"premium","mqttExpiresAt":\#(Int(now + 3600))"#
+    if let keyID {
+        body += #","mqttKeyId":"\#(keyID)","mqttKeyExpiresAt":\#(Int(now + serverSkew + keyExpiresIn))"#
+    }
+    body += #","serverTime":\#(Int(now + serverSkew))}"#
+    return .init(status: 200, body: body)
+}
+
+runAsync {
+    let auth = await authSession()
+    let keyID = String(repeating: "1a", count: 16)
+    StubProtocol.reset([refreshReply(keyID: keyID)])
+
+    let first = (try? await auth.mqttConnectPassword(clientID: MQTT_ID)) ?? ""
+    check(StubProtocol.seen.count == 1, "with no key yet, the first CONNECT costs one refresh")
+    let sent = String(data: StubProtocol.bodies.first ?? Data(), encoding: .utf8) ?? ""
+    check(sent.contains("mqttSigningKey"), "the refresh registers a signing key: \(sent)")
+    check(first.hasPrefix("v1.\(keyID)."), "and the password is a v1 proof under the key id we were given")
+
+    let second = (try? await auth.mqttConnectPassword(clientID: MQTT_ID)) ?? ""
+    check(StubProtocol.seen.count == 1, "the next CONNECT is signed locally — no round trip")
+    check(second.hasPrefix("v1.\(keyID).") && second != first, "…with a fresh nonce")
+}
+
+runAsync {
+    // The phone's clock is five minutes slow. The proof must carry SERVER time,
+    // or the hook's ±60 s window refuses every CONNECT.
+    let auth = await authSession()
+    let keyID = String(repeating: "2b", count: 16)
+    StubProtocol.reset([refreshReply(keyID: keyID, serverSkew: 300)])
+    let pw = (try? await auth.mqttConnectPassword(clientID: MQTT_ID)) ?? ""
+    let ts = Double(pw.split(separator: ".").dropFirst(2).first ?? "") ?? 0
+    check(abs(ts - (Date().timeIntervalSince1970 + 300)) < 5,
+          "the timestamp is corrected to the server's clock")
+}
+
+runAsync {
+    let auth = await authSession()
+    // A key with under two minutes left would be cut off by EMQX moments after
+    // CONNACK, so it is refreshed instead of used.
+    StubProtocol.reset([refreshReply(keyID: String(repeating: "3c", count: 16), keyExpiresIn: 60),
+                        refreshReply(keyID: String(repeating: "4d", count: 16))])
+    _ = try? await auth.mqttConnectPassword(clientID: MQTT_ID)
+    let pw = (try? await auth.mqttConnectPassword(clientID: MQTT_ID)) ?? ""
+    check(StubProtocol.seen.count >= 2, "a key about to expire is refreshed rather than signed with")
+    check(pw.hasPrefix("v1.\(String(repeating: "4d", count: 16))."), "…and the new key is the one used")
+}
+
+runAsync {
+    let auth = await authSession()
+    let keyID = String(repeating: "5e", count: 16)
+    StubProtocol.reset([refreshReply(keyID: keyID), refreshReply(keyID: String(repeating: "6f", count: 16))])
+    _ = try? await auth.mqttConnectPassword(clientID: MQTT_ID)
+    // The broker refused us: whatever key we hold is not one it accepts.
+    await auth.invalidateMqttKey()
+    let pw = (try? await auth.mqttConnectPassword(clientID: MQTT_ID)) ?? ""
+    check(StubProtocol.seen.count == 2, "after a refused CONNECT the next one refreshes")
+    check(pw.hasPrefix("v1.\(String(repeating: "6f", count: 16)).") , "…and signs with the new key")
+}
+
+runAsync {
+    // A server that predates v1 answers without a key id: the rotated bearer
+    // token is still the password, exactly as before.
+    let auth = await authSession()
+    StubProtocol.reset([refreshReply(keyID: nil), refreshReply(keyID: nil)])
+    let pw = (try? await auth.mqttConnectPassword(clientID: MQTT_ID)) ?? ""
+    check(pw == "rotated-token", "an old server still gets its token")
+    _ = try? await auth.mqttConnectPassword(clientID: MQTT_ID)
+    check(StubProtocol.seen.count == 2, "…refreshed per CONNECT, as it always was")
+}
+
+// ── Transport discovery: the server's "no" is the kill switch ───────────────
+//
+// HQN_ENABLED is opt-in on the server, and a server with it off answers
+// {"hqn": null}. That must switch hqn/1 OFF for the host — compiled-in keys
+// included — while a request that merely FAILS must change nothing.
+
+runAsync {
+    let auth = await authSession()
+    let host = ServerConfig.host
+    let x = Data(repeating: 7, count: 32).base64EncodedString()
+    let q = Data(repeating: 9, count: NoiseHQN.hqcPublicKeyBytes).base64EncodedString()
+    let on = #"{"hqn":{"enabled":true,"host":"gw.test","port":443,"keys":[{"keyId":1,"x25519":"\#(x)","hqc":"\#(q)"}]}}"#
+
+    StubProtocol.reset([.init(status: 200, body: on)])
+    await auth.refreshTransportDiscovery()
+    check(ServerConfig.hqnEndpoint?.host == "gw.test", "an advertised gateway is used")
+    check(StubProtocol.seen.first?.url?.path == "/auth/transport", "…asked at /auth/transport")
+
+    StubProtocol.reset([.init(status: 500, body: "")])
+    await auth.refreshTransportDiscovery()
+    check(ServerConfig.hqnEndpoint?.host == "gw.test", "a FAILED request changes nothing")
+
+    StubProtocol.reset([.init(status: 200, body: #"{"hqn":null}"#)])
+    await auth.refreshTransportDiscovery()
+    check(ServerConfig.hqnEndpoint == nil, "the server's null switches it off")
+    ServerConfig.setDiscoveredHQN(nil, enabled: true, for: host)
+}
+
 finish()

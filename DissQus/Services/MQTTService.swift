@@ -45,6 +45,9 @@ protocol MQTTBackend: AnyObject {
     func publish(_ topic: String, payload: Data, qos: Int, retained: Bool,
                  onWrite: ((Bool) -> Void)?)
     func disconnect()
+    /// Drop a link presumed dead and report it as `.disconnected`, so the
+    /// reconnect loop runs. No DISCONNECT goes out; the broker fires our Will.
+    func abandonLink()
 }
 
 // Topics and inbound routing live in MQTTTopics.swift — the routing decision
@@ -72,6 +75,14 @@ actor MQTTService {
 
     /// Suspended `connect(id:)` callers, resumed on CONNACK or on failure.
     private var connectWaiters: [CheckedContinuation<Void, Error>] = []
+    /// Chooses the transport order per connect; shared so what one connect
+    /// learned about this network (a blocked gateway port) holds for the next.
+    private let selector: TransportSelector
+    /// Whether a failure before CONNACK is reported to the connection handler —
+    /// false for every attempt but the last.
+    private var reportAttemptFailure = true
+    /// The transport the live session is on, for diagnostics.
+    private(set) var activeTransport: TransportSelector.Kind?
 
     /// Delivered for each conversation message: (topic, ciphertext).
     private var messageHandler: ((_ topic: String, _ payload: Data) -> Void)?
@@ -84,9 +95,10 @@ actor MQTTService {
     /// Delivered when the link comes up or goes down.
     private var connectionHandler: ((_ connected: Bool, _ error: Error?) -> Void)?
 
-    init(backend: MQTTBackend, auth: AuthService) {
+    init(backend: MQTTBackend, auth: AuthService, selector: TransportSelector = .shared) {
         self.backend = backend
         self.auth = auth
+        self.selector = selector
     }
 
     func setMessageHandler(_ h: @escaping (_ topic: String, _ payload: Data) -> Void) { messageHandler = h }
@@ -117,25 +129,90 @@ actor MQTTService {
             onlineFriends.removeAll()
         }
         myID = id
-        let token = try await auth.refreshMqttToken()   // rotated on every connect
-        let willTopic = MQTTTopics.presence(id)
-        let willPayload = presencePayload(online: false)
 
+        // Which transports, in which order (TransportSelector): hqn/1 over raw
+        // TCP when this server has a gateway and this network has not been
+        // seen to block it, then WSS — always WSS last.
+        if ServerConfig.hqnDiscoveryIsStale() { await auth.refreshTransportDiscovery() }
+        let network = Reachability.currentNetworkKey
+        let attempts = selector.plan(hqn: ServerConfig.hqnEndpoint, wss: ServerConfig.mqttURL, network: network)
+
+        for (i, attempt) in attempts.enumerated() {
+            let isLast = i == attempts.count - 1
+            let started = Date()
+            do {
+                try await attemptConnect(id: id, url: attempt.url, deadline: attempt.deadline, isLast: isLast)
+                selector.record(attempt.kind, succeeded: true,
+                                seconds: Date().timeIntervalSince(started), network: network)
+                activeTransport = attempt.kind
+                if i > 0 { schedulePresenceRepair(for: id) }
+                return
+            } catch {
+                // Refused credentials are not a transport problem: every
+                // transport would be refused the same way, and the next connect
+                // refreshes the key (see handle(.disconnected)).
+                if case MQTTWireClient.MQTTError.connectionRefused = error { throw error }
+                selector.record(attempt.kind, succeeded: false, seconds: nil, network: network)
+                if isLast { throw error }
+            }
+        }
+    }
+
+    /// One transport attempt: sign a FRESH CONNECT (its nonce is single-use, so
+    /// a CONNECT that reached the broker over one transport cannot be reused on
+    /// the next), connect, and wait for CONNACK — or for the deadline, after
+    /// which the half-open link is abandoned so the next transport can start.
+    private func attemptConnect(id: String, url: URL, deadline: TimeInterval?, isLast: Bool) async throws {
+        let password = try await auth.mqttConnectPassword(clientID: id)
+        // An attempt that fails before CONNACK is not a "disconnect" the app
+        // should act on — unless it is the last one. Reported, a failed hqn/1
+        // attempt would start the app's reconnect loop underneath the fallback.
+        reportAttemptFailure = isLast
         backend.connect(
-            url: ServerConfig.mqttURL,
+            url: url,
             clientID: id,
             username: id,
-            password: token,
-            willTopic: willTopic,
-            willPayload: willPayload
+            password: password,
+            willTopic: MQTTTopics.presence(id),
+            willPayload: presencePayload(online: false)
         ) { [weak self] event in
             guard let self else { return }
             Task { await self.handle(event) }
         }
 
+        let timer: Task<Void, Never>? = deadline.map { seconds in
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await self?.abandonIfStillConnecting()
+            }
+        }
+        defer { timer?.cancel() }
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             connectWaiters.append(cont)
         }
+    }
+
+    private func abandonIfStillConnecting() {
+        guard !isConnected, !connectWaiters.isEmpty else { return }
+        backend.abandonLink()
+    }
+
+    /// After a fallback, the abandoned attempt may still have reached the
+    /// broker — and its Last-Will ("offline", retained) can land AFTER the
+    /// "online" this session published. Saying "online" once more, shortly
+    /// after, makes the last word the true one.
+    private func schedulePresenceRepair(for id: String) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await self?.republishPresenceIfConnected(id)
+        }
+    }
+
+    private func republishPresenceIfConnected(_ id: String) {
+        guard isConnected, myID == id else { return }
+        backend.publish(MQTTTopics.presence(id), payload: presencePayload(online: true),
+                        qos: 1, retained: true, onWrite: nil)
     }
 
     func disconnect() {
@@ -149,6 +226,14 @@ actor MQTTService {
         isConnected = false
         onlineFriends.removeAll()
         resumeWaiters(with: CancellationError())
+    }
+
+    /// The device's network path changed under a live link. A socket bound to
+    /// the old path can look healthy for minutes, so drop it now; the
+    /// `.disconnected` it produces drives the normal reconnect.
+    func abandonLink() {
+        guard isConnected else { return }
+        backend.abandonLink()
     }
 
     // MARK: Subscriptions
@@ -255,6 +340,8 @@ actor MQTTService {
         switch event {
         case .connected:
             isConnected = true
+            // From here on a drop is a real disconnect, whichever attempt this was.
+            reportAttemptFailure = true
             if let id = myID {
                 backend.subscribe(MQTTTopics.inbox(id), qos: 1)
                 backend.subscribe(MQTTTopics.graph(id), qos: 1)
@@ -269,11 +356,19 @@ actor MQTTService {
             connectionHandler?(true, nil)
 
         case .disconnected(let error):
+            // Refused credentials: the key we signed with is not one the broker
+            // accepts any more, so the next connect must refresh, not re-sign.
+            if case MQTTWireClient.MQTTError.connectionRefused(let code)? = error, code == 4 || code == 5 {
+                Task { await auth.invalidateMqttKey() }
+            }
+            let wasConnected = isConnected
             isConnected = false
             onlineFriends.removeAll()
             ProtocolLog.record(.disconnected(reason: error.map { "\($0)" } ?? "closed"))
             resumeWaiters(with: error ?? CancellationError())
-            connectionHandler?(false, error)
+            // A transport attempt that fails before CONNACK, with another one
+            // still to come, is the fallback's business — not the app's.
+            if wasConnected || reportAttemptFailure { connectionHandler?(false, error) }
 
         case .subscribeRefused(let topic, let code):
             // Named, not swallowed. With deny_action = disconnect the link is

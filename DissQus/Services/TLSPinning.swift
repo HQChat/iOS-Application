@@ -70,6 +70,42 @@ enum ServerConfig {
 
     /// The origin as the user typed/stored it per profile, for display.
     static var displayOrigin: String { httpsOrigin }
+
+    // MARK: Raw-TCP transport (hqn/1)
+
+    private static let hqnLock = NSLock()
+    nonisolated(unsafe) private static var discovered: [String: (endpoint: HQNEndpoint?, enabled: Bool, at: Date)] = [:]
+
+    /// The hqn/1 gateway for the active host, or nil to stay on WSS.
+    ///
+    /// Keys compiled into the build (Deployment) win over discovered ones for
+    /// the default server: a pin that arrives over the network is only as good
+    /// as the network. Discovery (`GET /auth/transport`, over the pinned HTTPS
+    /// API) supplies them for any other home server — and a server that answers
+    /// `{"hqn": null}` (the transport is opt-in, `HQN_ENABLED=1`) or
+    /// `enabled: false` switches it OFF for that host, compiled keys or not,
+    /// without a release.
+    static var hqnEndpoint: HQNEndpoint? {
+        hqnLock.lock(); defer { hqnLock.unlock() }
+        let d = discovered[host]
+        if d?.enabled == false { return nil }
+        if let built = Deployment.hqnEndpoint(forHost: host) { return built }
+        return d?.endpoint
+    }
+
+    /// Record what `/auth/transport` said for `host`.
+    static func setDiscoveredHQN(_ endpoint: HQNEndpoint?, enabled: Bool, for host: String, at now: Date = Date()) {
+        hqnLock.lock(); defer { hqnLock.unlock() }
+        discovered[host] = (endpoint, enabled, now)
+    }
+
+    /// Whether the discovery answer for the active host is missing or older
+    /// than `maxAge` — the caller refreshes it before choosing a transport.
+    static func hqnDiscoveryIsStale(maxAge: TimeInterval = 3600, now: Date = Date()) -> Bool {
+        hqnLock.lock(); defer { hqnLock.unlock() }
+        guard let d = discovered[host] else { return true }
+        return now.timeIntervalSince(d.at) > maxAge
+    }
 }
 
 /// Pins the server's SPKI (SHA-256, base64) from Info.plist `ServerPinnedSPKIHashes`.

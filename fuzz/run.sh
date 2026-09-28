@@ -25,7 +25,8 @@ mkdir -p "$BUILD"
 # The mqtt-wire slice. TestSupport/Stubs are here for the same reason
 # tests/run.sh passes them to its MQTT slice: MQTTWireClient.swift references
 # app-level symbols that only those files provide outside an Xcode target.
-MQTT_SOURCES=("$TESTS/TestSupport.swift" "$TESTS/Stubs.swift" "$SRC/MQTTWireClient.swift")
+MQTT_SOURCES=("$TESTS/TestSupport.swift" "$TESTS/Stubs.swift" "$TESTS/TransportStubs.swift"
+               "$SRC/MQTTWireClient.swift" "$SRC/MQTTTransport.swift" "$SRC/NoiseHQN.swift")
 
 # The envelope slice, mirroring the one in tests/run.sh.
 ENVELOPE_V3_SOURCES=("$SRC/ConversationEnvelopeV3.swift" "$SRC/PeerID.swift")
@@ -39,6 +40,10 @@ TOPIC_SOURCES=("$SRC/MQTTTopics.swift" "$SRC/PeerID.swift")
 
 # The handshake frame codec. Foundation + CryptoKit only.
 HANDSHAKE_SOURCES=("$SRC/Handshake.swift")
+
+# The hqn/1 Noise handshake. HQCService supplies the default KEM, so the native
+# library is linked even though the verdicts inject a pinned one.
+NOISE_SOURCES=("$SRC/NoiseHQN.swift" "$SRC/HQCService.swift")
 
 # The ratchet state machine. A stub KEM lives in the target, so no native lib.
 RATCHET_SOURCES=("$SRC/DoubleRatchet.swift" "$SRC/RatchetSession.swift")
@@ -195,6 +200,21 @@ MSG
     cp HandshakeVerdict.swift "$BUILD/main.swift"
     xcrun swiftc -O "$BUILD/main.swift" "${HANDSHAKE_SOURCES[@]}" -o "$BUILD/handshake-verdict"
     echo "built $BUILD/handshake-verdict"
+    ;;
+
+  noise-verdict)
+    # The Swift half of the hqn/1 differential (the raw-TCP transport's Noise
+    # handshake and framing). Driven by
+    # services/server/test/fuzz/noise-differential.ts. The pinned vectors only
+    # show the two implementations agree on VALID input; this is for the input
+    # an attacker actually controls.
+    echo "── building noise-verdict ─────────────────────"
+    cp NoiseVerdict.swift "$BUILD/main.swift"
+    xcrun swiftc -O "$BUILD/main.swift" "${NOISE_SOURCES[@]}" \
+      -import-objc-header ../DissQus/Core/HQC-Bridging-Header.h -I ../DissQus/Core \
+      -L .. -lhqc_wrap -Xlinker -rpath -Xlinker "$(cd .. && pwd)" \
+      -o "$BUILD/noise-verdict"
+    echo "built $BUILD/noise-verdict"
     ;;
 
   ratchet-state)

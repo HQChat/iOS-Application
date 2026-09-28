@@ -337,9 +337,52 @@ enum ReplayPolicy {
     }
 }
 
+/// Whether a connected link is still carrying anything.
+///
+/// The client pings at half the keepalive, and until now nothing looked at the
+/// answer. A link that dies silently — the phone walked off Wi-Fi, a NAT dropped
+/// the mapping, a middlebox ate the FIN — kept `connected = true` and kept
+/// "sending" pings into nothing until the OS gave up on the socket, which can be
+/// minutes. Meanwhile the app showed a live connection and delivered nothing.
+///
+/// So each PINGREQ opens a deadline, and ANY inbound bytes before it close it: a
+/// PINGRESP, a PUBLISH, an ack — all prove the path works. Pure, so the timing
+/// rules are tested without a socket or a clock.
+struct PingLiveness {
+
+    /// How long to wait for the broker after a PINGREQ. EMQX answers in
+    /// milliseconds; ten seconds is long enough for a congested cellular link
+    /// and short against the minutes the OS can take to notice on its own.
+    static let pongTimeout: TimeInterval = 10
+
+    private(set) var pingSentAt: TimeInterval?
+    private(set) var lastInboundAt: TimeInterval?
+
+    /// A PINGREQ just went out. A ping already outstanding keeps its ORIGINAL
+    /// deadline — re-arming would let a link that never answers stay alive by
+    /// being pinged again.
+    mutating func pingSent(at now: TimeInterval) {
+        if pingSentAt == nil { pingSentAt = now }
+    }
+
+    /// Bytes arrived. Whatever they were, the path is alive.
+    mutating func inbound(at now: TimeInterval) {
+        lastInboundAt = now
+        pingSentAt = nil
+    }
+
+    /// True once a ping has gone unanswered for `pongTimeout`.
+    func isOverdue(at now: TimeInterval) -> Bool {
+        guard let sent = pingSentAt else { return false }
+        return now - sent >= Self.pongTimeout
+    }
+}
+
 // MARK: - Transport
 
-/// MQTT over `URLSessionWebSocketTask`, with the app's SPKI pinning.
+/// The MQTT 3.1.1 session — codec, CONNACK, replay, keepalive — over whichever
+/// byte pipe the endpoint URL names (MQTTTransport.swift): `wss://` through
+/// nginx with SPKI pinning, or `hqn://` over raw TCP inside hqn/1.
 final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
 
     enum MQTTError: LocalizedError {
@@ -351,6 +394,13 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
         /// is untrustworthy, and continuing to buffer is the failure this
         /// replaced.
         case malformedStream(String)
+        /// A PINGREQ went unanswered for `PingLiveness.pongTimeout`, with no
+        /// other traffic either: the path is dead even though the socket says
+        /// otherwise.
+        case keepaliveTimeout
+        /// The caller abandoned the link because the device's network path
+        /// changed underneath it (see `abandonLink`).
+        case linkAbandoned
 
         var errorDescription: String? {
             switch self {
@@ -362,6 +412,10 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
                 return "MQTT is not connected"
             case .malformedStream(let reason):
                 return "MQTT stream is unparseable: \(reason)"
+            case .keepaliveTimeout:
+                return "MQTT broker stopped answering keepalive pings"
+            case .linkAbandoned:
+                return "MQTT link abandoned after a network path change"
             }
         }
     }
@@ -379,10 +433,19 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
     private let keepAlive: UInt16 = 60
 
     private let queue = DispatchQueue(label: "mqtt.wire")
-    private var session: URLSession?
-    private var task: URLSessionWebSocketTask?
-    private var pinning: TLSPinningDelegate?
+    /// Builds the byte pipe for an endpoint. Injectable so the session logic
+    /// can be driven through a fake transport in tests.
+    private let makeTransport: (URL) -> ByteTransport
+    private var link: ByteTransport?
+
+    init(makeTransport: @escaping (URL) -> ByteTransport = MQTTTransports.make(for:)) {
+        self.makeTransport = makeTransport
+    }
     private var pingTimer: DispatchSourceTimer?
+    private var liveness = PingLiveness()
+    /// Bumped per connection, so a pong deadline armed for a previous link
+    /// cannot fail the current one.
+    private var linkGeneration = 0
 
     private var buffer = Data()
     private var onEvent: ((MQTTEvent) -> Void)?
@@ -431,26 +494,32 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
             self.closed = false
             self.connected = false
             self.buffer.removeAll()
+            self.liveness = PingLiveness()
+            self.linkGeneration &+= 1
 
-            let pinning = TLSPinningDelegate()
-            let session = URLSession(configuration: .default, delegate: pinning, delegateQueue: nil)
-            // "mqtt" is the subprotocol MQTT-over-WebSocket mandates; EMQX
-            // rejects the upgrade without it.
-            let task = session.webSocketTask(with: url, protocols: ["mqtt"])
-            self.pinning = pinning
-            self.session = session
-            self.task = task
-
-            pinning.setOnClose { [weak self] error in
-                self?.queue.async { self?.fail(error) }
-            }
-
-            task.resume()
-            self.receiveLoop()
-            self.send(MQTTCodec.connect(
-                clientID: clientID, username: username, password: password,
-                willTopic: willTopic, willPayload: willPayload, willRetain: true,
-                keepAlive: self.keepAlive, cleanSession: false))
+            // The CONNECT is the transport's OPENING, not an ordinary send:
+            // hqn/1 carries it inside its first handshake message, which is
+            // what makes a raw-TCP connect cost one round trip after TCP's.
+            let generation = self.linkGeneration
+            let link = self.makeTransport(url)
+            self.link = link
+            link.start(
+                opening: MQTTCodec.connect(
+                    clientID: clientID, username: username, password: password,
+                    willTopic: willTopic, willPayload: willPayload, willRetain: true,
+                    keepAlive: self.keepAlive, cleanSession: false),
+                onReceive: { [weak self] data in
+                    self?.queue.async {
+                        guard let self, self.linkGeneration == generation, !self.closed else { return }
+                        self.ingest(data)
+                    }
+                },
+                onClose: { [weak self] error in
+                    self?.queue.async {
+                        guard let self, self.linkGeneration == generation else { return }
+                        self.fail(error ?? MQTTError.notConnected)
+                    }
+                })
         }
     }
 
@@ -503,6 +572,19 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
         queue.async {
             if self.connected { self.send(MQTTCodec.disconnect()) }
             self.teardown(notify: false)
+        }
+    }
+
+    /// Drop the link and REPORT it, so the caller's reconnect loop runs. Unlike
+    /// `disconnect`, which is a deliberate goodbye, this is for a link that is
+    /// presumed dead: the device's network path changed (Wi-Fi to cellular, a
+    /// new address), and a socket bound to the old path will not say so for a
+    /// long time. No DISCONNECT is sent — there is nothing to send it over — so
+    /// the broker publishes our Will, which is the truth until we reconnect.
+    func abandonLink() {
+        queue.async {
+            guard !self.closed else { return }
+            self.fail(MQTTError.linkAbandoned)
         }
     }
 
@@ -578,35 +660,12 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
     }
 
     private func send(_ packet: Data, then: ((Bool) -> Void)? = nil) {
-        guard let task else { then?(false); return }
-        task.send(.data(packet)) { [weak self] error in
-            if let error { self?.queue.async { self?.fail(error) } }
-            then?(error == nil)
-        }
-    }
-
-    private func receiveLoop() {
-        guard let task else { return }
-        task.receive { [weak self] result in
-            guard let self else { return }
-            self.queue.async {
-                switch result {
-                case .failure(let error):
-                    self.fail(error)
-                case .success(let message):
-                    switch message {
-                    case .data(let data): self.ingest(data)
-                    case .string(let s): self.ingest(Data(s.utf8))   // not expected; MQTT is binary
-                    @unknown default: break
-                    }
-                    guard !self.closed else { return }
-                    self.receiveLoop()
-                }
-            }
-        }
+        guard let link else { then?(false); return }
+        link.send(packet) { error in then?(error == nil) }
     }
 
     private func ingest(_ data: Data) {
+        liveness.inbound(at: Self.now())
         buffer.append(data)
         loop: while true {
             switch MQTTCodec.nextPacket(from: &buffer) {
@@ -703,10 +762,27 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
         timer.setEventHandler { [weak self] in
             guard let self, self.connected else { return }
             self.send(MQTTCodec.pingreq())
+            self.liveness.pingSent(at: Self.now())
+            self.armPongDeadline()
         }
         timer.resume()
         pingTimer = timer
     }
+
+    /// Checks, once `pongTimeout` has passed, whether anything came back since
+    /// the ping. Only the link that armed it may be failed by it.
+    private func armPongDeadline() {
+        let generation = linkGeneration
+        queue.asyncAfter(deadline: .now() + PingLiveness.pongTimeout) { [weak self] in
+            guard let self, self.linkGeneration == generation,
+                  self.connected, !self.closed else { return }
+            if self.liveness.isOverdue(at: Self.now()) {
+                self.fail(MQTTError.keepaliveTimeout)
+            }
+        }
+    }
+
+    private static func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     /// Terminal failure for this connection: report once, then tear down. The
     /// caller (MQTTService) owns reconnect + token rotation.
@@ -722,11 +798,8 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
         connected = false
         pingTimer?.cancel()
         pingTimer = nil
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
-        session?.invalidateAndCancel()
-        session = nil
-        pinning = nil
+        link?.cancel()
+        link = nil
         pending.removeAll()
         subscribeTopics.removeAll()
         if notify { onEvent?(.disconnected(nil)) }

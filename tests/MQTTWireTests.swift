@@ -317,6 +317,121 @@ idle.publish("c/\(String(repeating: "b", count: 64))",
 check("a publish without a completion still compiles and does not trap", true)
 
 print("")
+print("keepalive liveness")
+// The client pinged every 30 s and never looked at the answer, so a link that
+// died silently stayed "connected" until the OS gave up on the socket. Each
+// PINGREQ now opens a deadline that any inbound bytes close.
+do {
+    var l = PingLiveness()
+    check("nothing outstanding is never overdue", !l.isOverdue(at: 1_000))
+
+    l.pingSent(at: 100)
+    check("just under the timeout is not overdue",
+          !l.isOverdue(at: 100 + PingLiveness.pongTimeout - 0.001))
+    check("at the timeout it is overdue", l.isOverdue(at: 100 + PingLiveness.pongTimeout))
+
+    l.inbound(at: 105)
+    check("any inbound bytes close the deadline", !l.isOverdue(at: 1_000))
+
+    // A second ping while one is outstanding must not push the deadline out —
+    // otherwise a link that never answers survives by being pinged again.
+    var m = PingLiveness()
+    m.pingSent(at: 0)
+    m.pingSent(at: 9)
+    check("re-pinging keeps the ORIGINAL deadline", m.isOverdue(at: PingLiveness.pongTimeout))
+
+    check("the timeout is well under the keepalive", PingLiveness.pongTimeout < 30)
+}
+
+let abandoning = MQTTWireClient()
+abandoning.abandonLink()
+check("abandoning a link that never connected does not trap", true)
+
+print("")
+print("the session over a byte transport")
+// The session logic now sits on ByteTransport (MQTTTransport.swift), so it can
+// be driven without a socket — which is also the proof that nothing in it
+// depends on WebSocket framing. hqn/1 and WSS are each just a transport.
+final class FakeTransport: ByteTransport {
+    var opening: Data?
+    var sent: [Data] = []
+    var cancelled = false
+    var receive: ((Data) -> Void)?
+    var close: ((Error?) -> Void)?
+    let lock = NSLock()
+    func start(opening: Data, onReceive: @escaping (Data) -> Void, onClose: @escaping (Error?) -> Void) {
+        lock.lock(); self.opening = opening; receive = onReceive; close = onClose; lock.unlock()
+    }
+    func send(_ data: Data, completion: @escaping (Error?) -> Void) {
+        lock.lock(); sent.append(data); lock.unlock()
+        completion(nil)
+    }
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    var sentTypes: [UInt8] { lock.lock(); defer { lock.unlock() }; return sent.map { $0.first ?? 0 } }
+}
+
+func settle() { Thread.sleep(forTimeInterval: 0.15) }
+
+do {
+    let fake = FakeTransport()
+    var events: [String] = []
+    let evLock = NSLock()
+    let client = MQTTWireClient(makeTransport: { _ in fake })
+    client.connect(url: URL(string: "hqn://gw.example:443")!, clientID: "cid", username: "cid", password: "v1.x",
+                   willTopic: "u/cid/presence", willPayload: Data("{}".utf8)) { e in
+        evLock.lock(); defer { evLock.unlock() }
+        switch e {
+        case .connected: events.append("connected")
+        case .disconnected(let err): events.append("disconnected:\(err.map { "\($0)" } ?? "nil")")
+        case .message(let topic, _): events.append("message:\(topic)")
+        default: break
+        }
+    }
+    settle()
+    check(fake.opening?.first == 0x10, "the CONNECT is the transport's OPENING, not an ordinary send")
+    check(fake.sent.isEmpty, "…and nothing else goes out before CONNACK")
+
+    client.subscribe("u/cid/inbox", qos: 1)
+    settle()
+    check(fake.sent.isEmpty, "a SUBSCRIBE before CONNACK waits")
+
+    fake.receive?(Data([0x20, 0x02, 0x00, 0x00]))   // CONNACK, accepted
+    settle()
+    check(events.first == "connected", "CONNACK through the transport connects the session")
+    check(fake.sentTypes.first == 0x82, "the waiting SUBSCRIBE is flushed after CONNACK")
+
+    // A PUBLISH split across two reads still arrives as one message.
+    let pub = MQTTCodec.publish(topic: "u/cid/inbox", payload: Data("hi".utf8), qos: 0,
+                                retained: false, packetID: nil, dup: false)
+    fake.receive?(pub.prefix(3))
+    fake.receive?(pub.dropFirst(3))
+    settle()
+    check(events.contains("message:u/cid/inbox"), "bytes split across reads reassemble into a message")
+
+    client.abandonLink()
+    settle()
+    check(events.last?.hasPrefix("disconnected") == true, "abandoning the link reports a disconnect")
+    check(fake.cancelled, "…and tears the transport down")
+
+    // A close from a transport that has already been replaced must not fail the
+    // new link: the generation guard.
+    let first = FakeTransport(), second = FakeTransport()
+    var made = 0
+    let c2 = MQTTWireClient(makeTransport: { _ in made += 1; return made == 1 ? first : second })
+    var drops = 0
+    c2.connect(url: URL(string: "hqn://a:1")!, clientID: "c", username: "c", password: "p",
+               willTopic: "t", willPayload: Data()) { if case .disconnected = $0 { drops += 1 } }
+    settle()
+    c2.connect(url: URL(string: "wss://a/mqtt")!, clientID: "c", username: "c", password: "p",
+               willTopic: "t", willPayload: Data()) { if case .disconnected = $0 { drops += 1 } }
+    settle()
+    first.close?(URLError(.networkConnectionLost))
+    settle()
+    check(drops == 0, "a stale transport's close does not fail the current link")
+    check(first.cancelled && second.opening != nil, "the old transport is cancelled, the new one opened")
+}
+
+print("")
 if failures > 0 {
     print("✗ \(failures) MQTT wire check(s) failed")
     exit(1)
