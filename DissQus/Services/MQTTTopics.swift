@@ -24,45 +24,61 @@
 
 import Foundation
 
-/// Every topic here names CLIENT IDS — `sha256(lowercase-hex(publicKey))`, 64
-/// hex characters. They named public keys, so `u/{pk}/presence` was a
-/// 14484-character topic, and an `mqtt_acl` row carried one of those beside a
-/// 14474-character `pk` column: ~29 kB to record one membership bit. The
-/// consequence that actually bit was in the admin API, where a per-client URL at
-/// that size came back `414 URI Too Long` — so unfriending never dropped a live
-/// subscription, only the next authorization check.
-enum MQTTTopics {
-    /// Conversation topic between two client ids: `c/{friendshipHash}` where the
-    /// hash is sha256 over the two ids sorted — identical to the server's
-    /// crypto-utils.friendshipHash, so both ends derive the same topic. Pinned
-    /// against the shared vector file (apps/apple/tests/PeerIDTests.swift).
-    static func conversation(_ id1: String, _ id2: String) -> String {
-        "c/" + friendshipHash(id1, id2)
+/// A friendship's two topics, as the server handed them out.
+///
+/// Conversation and handshake topics are CAPABILITIES: `cv/{convo_id}` and
+/// `hs/{handshake_id}` name random 256-bit ids the server mints per friendship
+/// (services/server/services/db/migrations/009_friendship_topics.sql) and gives
+/// only to its two members, through `/friends`. The broker allows any exact
+/// `cv/…` or `hs/…` and refuses every wildcard subscription, so knowing the id
+/// IS the permission (infra/deploy/emqx/acl.conf).
+///
+/// They used to be `c/` and `h/` + sha256 over the two sorted client ids, which
+/// anybody could compute — so the only thing between a stranger and a
+/// conversation was a per-topic ACL in Postgres. Nothing is derived now, and
+/// there is deliberately no way to build one of these from two ids: a contact
+/// without synced ids has no topic until the next directory sync gives it one.
+struct FriendTopics: Equatable, Hashable, Sendable {
+    let conversation: String
+    let handshake: String
+
+    /// Nil unless both ids are exactly the shape the server mints: 64 lowercase
+    /// hex characters. Anything else is a server that predates 009, or a value
+    /// that is not ours to put in a topic string.
+    init?(convoID: String?, handshakeID: String?) {
+        guard let convoID, let handshakeID,
+              Self.isTopicID(convoID), Self.isTopicID(handshakeID) else { return nil }
+        conversation = "cv/" + convoID
+        handshake = "hs/" + handshakeID
     }
 
-    /// The bare hash the conversation and handshake topics are both built from:
-    /// sha256 over the two ids sorted. Named separately because it is not only a
-    /// topic — `POST /report` identifies a conversation by this value, and the
+    static func isTopicID(_ value: String) -> Bool {
+        value.count == 64 && value.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+    }
+}
+
+/// Every per-user topic here names a CLIENT ID — `sha256(lowercase-hex(publicKey))`,
+/// 64 hex characters. They named public keys, so `u/{pk}/presence` was a
+/// 14484-character topic, and the consequence that actually bit was in the
+/// admin API, where a per-client URL at that size came back `414 URI Too Long` —
+/// so unfriending never dropped a live subscription.
+enum MQTTTopics {
+    /// The bare friendship hash: sha256 over the two ids sorted. NOT a topic any
+    /// more — `POST /report` identifies a conversation by this value, and the
     /// server derives who is in it from the same hash. Two spellings of one
     /// definition is how a report ends up naming a conversation that does not
-    /// exist.
+    /// exist. Pinned against the shared vector file
+    /// (apps/apple/tests/PeerIDTests.swift).
     static func friendshipHash(_ id1: String, _ id2: String) -> String {
         PeerID.sha256Hex([id1, id2].sorted().joined())
     }
-    /// Where two friends prove an `init` came from the peer it names:
-    /// `h/{friendshipHash}`, derived exactly like the conversation topic.
-    ///
-    /// A SEPARATE topic from the inbox, and that is the point. Every friend may
-    /// publish to an inbox, so a challenge sitting there would be visible to —
-    /// and forgeable by — precisely the attacker the exchange exists to stop.
-    /// Only the two members are granted this one (DB.grantFriendTopic).
-    static func handshake(_ id1: String, _ id2: String) -> String {
-        "h/" + friendshipHash(id1, id2)
-    }
+    /// Owner publishes (retained + LWT); anyone who knows the id may read it.
     static func presence(_ id: String) -> String { "u/\(id)/presence" }
+    /// Owner subscribes; anyone who knows the id may publish (an `init` from a
+    /// sender we have no friendship with is dropped by the router).
     static func inbox(_ id: String) -> String { "u/\(id)/inbox" }
     /// Where the server says "your friend graph moved". Subscribe-only, and
-    /// ours alone — nobody else is granted anything on it.
+    /// ours alone.
     static func graph(_ id: String) -> String { "u/\(id)/graph" }
 }
 
@@ -71,10 +87,10 @@ enum MQTTTopics {
 enum InboundRoute: Equatable {
     /// `u/{id}/presence` — a peer's online flag. Carries the peer's id.
     case presence(peerID: String)
-    /// `c/{hash}` — an established conversation. Ordinary `msg` frames.
+    /// `cv/{convo_id}` — an established conversation. Ordinary `msg` frames.
     case conversation
-    /// `h/{hash}` — the challenge/proof exchange that authenticates an `init`.
-    /// Carries no envelope and no ciphertext; see Handshake.swift.
+    /// `hs/{handshake_id}` — the challenge/proof exchange that authenticates an
+    /// `init`. Carries no envelope and no ciphertext; see Handshake.swift.
     case handshake
     /// `u/{me}/inbox` — where `init` frames land, ours included. The handshake
     /// arrives here and nowhere else, which is why dropping this route cost
@@ -96,40 +112,29 @@ enum InboundRoute: Equatable {
 
 extension MQTTTopics {
 
-    /// The ONE topic a frame of this kind, from this sender, may arrive on.
+    /// The ONE topic a frame of this kind, from this sender, may arrive on —
+    /// or nil when there is none, because we hold no topics for that sender.
     ///
     /// The router used to attribute a frame by `envelope.sender` alone and throw
-    /// the topic away — the comment on the inbox route said so outright: "routes
-    /// on the ENVELOPE, not on the topic". Nothing then tied a frame to the
-    /// channel that carried it, so a frame claiming `sender = B` was dispatched
-    /// into B's session no matter which of our topics delivered it.
+    /// the topic away, so a frame claiming `sender = B` was dispatched into B's
+    /// session no matter which of our topics delivered it. Any accepted friend
+    /// — and every account is auto-friended to the helper bot — then had a
+    /// write channel into every one of our OTHER sessions: the delivery vector
+    /// for a forged ratchet step.
     ///
-    /// That matters because of what the ACL grants. `grantFriendTopic` gives each
-    /// friend `publish` on the other's inbox and `all` on the shared conversation
-    /// topic, and every account is auto-friended to the helper bot — so any one
-    /// accepted friend had a write channel into every one of our OTHER sessions.
-    /// On its own that leaks nothing (they cannot produce a frame that decrypts),
-    /// but it is the delivery vector for a forged ratchet step, and it widens the
-    /// attacker set for one from "the broker" to "any friend".
+    /// Both ends already send exactly this way — ChatSession publishes an `init`
+    /// to the peer's inbox and everything else to the conversation topic, and
+    /// bot.ts does the same and has enforced this rule on receive since it was
+    /// written. So this is the send policy, checked.
     ///
-    /// Both ends already send exactly this way and always have — ChatSession
-    /// publishes an `init` to the peer's inbox and everything else to the shared
-    /// topic, and bot.ts does the same and has enforced this rule on receive
-    /// since it was written. So this is the send policy, finally checked.
-    ///
-    /// ⚠️ It constrains a `msg` and NOT an `init`. A `msg` topic is derived from
-    /// both ids, so the channel corroborates the claim. An `init` goes to
-    /// `inbox(me)` — a topic every friend is granted publish on, by
-    /// construction, because that is how first contact reaches an offline peer.
-    /// For an `init` this establishes only that the frame reached the right
-    /// inbox, and nothing whatever about who sent it.
-    ///
-    /// That gap is not closeable at the transport layer, and it is the door the
-    /// impersonation walked through: an `init` is built entirely from public
-    /// values. What closes it is the challenge on `h/{friendshipHash}` — see
-    /// Handshake.swift.
-    static func expected(forInit isInit: Bool, sender: String, me: String) -> String {
-        isInit ? inbox(me) : conversation(me, sender)
+    /// ⚠️ It constrains a `msg` and NOT an `init`. A `msg` must arrive on the
+    /// conversation topic of OUR friendship with its sender, so the channel
+    /// corroborates the claim. An `init` goes to `inbox(me)`, which anyone who
+    /// knows our id may publish to — so for an `init` this establishes nothing
+    /// about who sent it. What closes that gap is the challenge on the
+    /// handshake topic — see Handshake.swift.
+    static func expected(forInit isInit: Bool, senderTopics: FriendTopics?, me: String) -> String? {
+        isInit ? inbox(me) : senderTopics?.conversation
     }
 
     /// A topic, shortened for a log line: long hex runs collapse to their ends,
@@ -150,7 +155,8 @@ extension MQTTTopics {
     }
 
     /// The peer id a `u/{id}/...` topic names, when it names one. A conversation
-    /// topic names a friendship HASH, not a peer, so there is nothing to return.
+    /// topic names a random friendship id, not a peer, so there is nothing to
+    /// return.
     static func peer(in topic: String) -> String? {
         // Same strictness as `route` — the two read the same string and must
         // agree on what counts as one.
@@ -165,18 +171,16 @@ extension MQTTTopics {
 
     /// Classify an inbound topic. Pure; no I/O, no state.
     static func route(_ topic: String) -> InboundRoute {
-        if topic.hasPrefix("h/") {
-            // Same reasoning as the conversation topic below: the hash is not
-            // checked here because the broker refuses a topic we are not
-            // entitled to at SUBSCRIBE.
-            return topic.count > 2 ? .handshake : .unroutable(reason: "empty handshake hash")
+        if topic.hasPrefix("hs/") {
+            // The id is not checked against anything here: the router checks the
+            // topic against the friendship's own before it acts on a frame.
+            return topic.count > 3 ? .handshake : .unroutable(reason: "empty handshake id")
         }
 
-        if topic.hasPrefix("c/") {
-            // The hash is not checked here: a conversation topic we are not
-            // entitled to is refused by the broker at SUBSCRIBE, so anything
-            // arriving on one is a topic we asked for.
-            return topic.count > 2 ? .conversation : .unroutable(reason: "empty conversation hash")
+        if topic.hasPrefix("cv/") {
+            // Same: `expected(forInit:senderTopics:me:)` is where a conversation
+            // topic is tied to a sender.
+            return topic.count > 3 ? .conversation : .unroutable(reason: "empty conversation id")
         }
 
         // `omittingEmptySubsequences: false` — an EMPTY topic level is legal and
@@ -186,9 +190,9 @@ extension MQTTTopics {
         // Swift's default drops empty segments, so all six of those classified as
         // presence for the same peer: a classifier accepting inputs outside its
         // own grammar, in the function that decides which conversation a payload
-        // belongs to. Not reachable through the broker — the ACL grants exact
-        // topic strings and none of those spellings has a grant — but the
-        // classifier should not be the part relying on that. Found by
+        // belongs to. Not reachable through the broker — the ACL names exact
+        // topic shapes and none of those spellings matches — but the classifier
+        // should not be the part relying on that. Found by
         // fuzz/TopicRouteTarget.swift.
         let parts = topic.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 3, parts[0] == "u" else {
@@ -218,23 +222,23 @@ extension MQTTTopics {
 /// rule, and getting it wrong is invisible until the app will not connect.
 ///
 /// A subscription is re-offered on every connect, so a topic the broker REFUSES
-/// must be forgotten rather than retried: `deny_action = disconnect` means the
-/// refusal also drops the link, and a topic left in the wanted set drops the
-/// next connection too, and the next. The loop cannot resolve itself, because
-/// the thing that would grant the topic — a person accepting an invite — needs
-/// an app that stays up long enough to show them the button.
+/// must be forgotten rather than retried. Under the old `deny_action =
+/// disconnect` a refusal also dropped the link, and a topic left in the wanted
+/// set dropped every connection after it. The broker only refuses the one packet
+/// now (`deny_action = ignore`), but re-asking for a refused topic on every
+/// reconnect is still pointless: the next directory sync is what re-asks, with
+/// topics the server has actually handed out.
 struct SubscriptionLedger {
 
     private(set) var wanted: [String: Int] = [:]
 
-    /// Ask for a topic (or re-ask, once a grant finally exists).
+    /// Ask for a topic (or re-ask, after a directory sync names it again).
     mutating func want(_ topic: String, qos: Int) { wanted[topic] = qos }
 
     /// Stop wanting a topic we chose to leave — an unfriend.
     mutating func forget(_ topic: String) { wanted.removeValue(forKey: topic) }
 
-    /// The broker said no. Drop it: re-offering it is what turns one missing
-    /// grant into an app that can never stay connected.
+    /// The broker said no. Drop it rather than re-offer it on every connect.
     mutating func refused(_ topic: String) { wanted.removeValue(forKey: topic) }
 
     /// Everything to (re)subscribe on a fresh session.

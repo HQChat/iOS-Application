@@ -128,18 +128,30 @@ final class Party {
 
     // MARK: - Friend request
     //
-    // The server half of this (invite, accept, mqtt_acl rows) is exercised by
+    // The server half of this (invite, accept, minting topic ids) is exercised by
     // services/server/test/e2e. What matters HERE is the client half: a peer's
     // key is pinned only if it hashes to the id that named it.
 
+    /// The friendship's topics, as /friends hands them to both members. Random
+    /// per friendship, so they are GIVEN, never derived.
+    private(set) var topics: [String: FriendTopics] = [:]
+
     @discardableResult
-    func acceptFriend(_ peerId: String, publicKey: Data) -> Bool {
+    func acceptFriend(_ peerId: String, publicKey: Data, topics friendship: FriendTopics) -> Bool {
         guard PeerID.matches(publicKey: publicKey, id: peerId) else {
             drops.append("refused a key that does not hash to \(peerId.prefix(8))…")
             return false
         }
         pinned[peerId] = publicKey
+        topics[peerId] = friendship
         return true
+    }
+
+    private func friendTopics(for peerId: String) throws -> FriendTopics {
+        guard let t = topics[peerId] else {
+            throw HarnessError.failed("\(name): no topics for \(peerId.prefix(8))…")
+        }
+        return t
     }
 
     // MARK: - Sending
@@ -196,7 +208,7 @@ final class Party {
         // An `init` goes to the peer's inbox — the only topic that can reach
         // somebody who has never subscribed to the conversation. Everything else
         // goes to the shared topic, and the receiver checks that pairing.
-        let topic = isInit ? MQTTTopics.inbox(peerId) : MQTTTopics.conversation(id, peerId)
+        let topic = isInit ? MQTTTopics.inbox(peerId) : try friendTopics(for: peerId).conversation
         try bus.publish(bytes, to: topic, from: id)
         return msgId
     }
@@ -206,7 +218,7 @@ final class Party {
     /// Drain every topic this party follows, and act on what is there.
     func poll(peers: [String]) throws {
         for peer in peers {
-            for packet in try bus.receive(id, on: MQTTTopics.handshake(id, peer)) {
+            for packet in try bus.receive(id, on: try friendTopics(for: peer).handshake) {
                 try handleHandshake(packet)
             }
         }
@@ -214,7 +226,7 @@ final class Party {
             try handleFrame(packet)
         }
         for peer in peers {
-            for packet in try bus.receive(id, on: MQTTTopics.conversation(id, peer)) {
+            for packet in try bus.receive(id, on: try friendTopics(for: peer).conversation) {
                 try handleFrame(packet)
             }
         }
@@ -236,8 +248,8 @@ final class Party {
         }
         // And a frame must arrive where that sender is entitled to put it.
         let expected = MQTTTopics.expected(forInit: frame.t == .initiate,
-                                           sender: frame.sender, me: id)
-        guard packet.topic == expected else {
+                                           senderTopics: topics[frame.sender], me: id)
+        guard let expected, packet.topic == expected else {
             drops.append("\(name): \(frame.t == .initiate ? "init" : "msg") from "
                          + "\(frame.sender.prefix(8))… on the wrong topic")
             return
@@ -290,14 +302,14 @@ final class Party {
 
         pendingChallenges[frame.sender] = PendingChallenge(nonce: nonce, expected: expected,
                                                            heldInit: (frame, aad))
-        try bus.publish(bytes, to: MQTTTopics.handshake(id, frame.sender), from: id)
+        try bus.publish(bytes, to: try friendTopics(for: frame.sender).handshake, from: id)
         handshakeEvents.append("\(name) challenged \(frame.sender.prefix(8))… and held their init")
     }
 
     private func handleHandshake(_ packet: BusPacket) throws {
         guard let frame = Handshake.decode(packet.payload) else { return }
         guard frame.to == id, frame.from != id else { return }
-        guard packet.topic == MQTTTopics.handshake(id, frame.from) else { return }
+        guard let shared = topics[frame.from], packet.topic == shared.handshake else { return }
 
         switch frame.kind {
         case .challenge:
@@ -310,7 +322,7 @@ final class Party {
                   let bytes = Handshake.encode(.init(kind: .proof, from: id, to: frame.from,
                                                      nonce: frame.nonce, ct: nil, proof: proof))
             else { return }
-            try bus.publish(bytes, to: MQTTTopics.handshake(id, frame.from), from: id)
+            try bus.publish(bytes, to: shared.handshake, from: id)
             handshakeEvents.append("\(name) proved possession to \(frame.from.prefix(8))…")
 
         case .proof:

@@ -98,7 +98,7 @@ echo ""
 echo "── Client identifier (cross-impl vectors) ─────"
 # `id = sha256(lowercase-hex(pk))` is the name every other layer keys on. Four
 # implementations must agree — this one, lib/identity.ts, Postgres's pk_digest,
-# and the EMQX authorizer query — so the vectors are READ rather than pasted in.
+# and /report's friendship hash — so the vectors are READ rather than pasted in.
 ID_VECTORS="../../../services/server/test/helpers/identity-vectors.json"
 if [ ! -f "$ID_VECTORS" ]; then
   echo "❌ missing $ID_VECTORS — regenerate with:"
@@ -108,7 +108,7 @@ fi
 MAIN="$(stage PeerIDTests.swift)"
 xcrun swiftc -O $COV_FLAGS \
   "$MAIN" TestSupport.swift \
-  "$SRC/PeerID.swift" \
+  "$SRC/PeerID.swift" "$SRC/MQTTTopics.swift" \
   -o "$BINDIR/peerIdTests"
 "$BINDIR/peerIdTests" "$(cd "$(dirname "$ID_VECTORS")" && pwd)/$(basename "$ID_VECTORS")"
 
@@ -333,7 +333,7 @@ echo "── Store, migration and reset ─────────────�
 MAIN="$(stage PersistenceTests.swift)"
 xcrun swiftc -O $COV_FLAGS -target arm64-apple-macos14 \
   "$MAIN" TestSupport.swift \
-  "$APP/Persistence.swift" "$MODELS/Message.swift" "$MODELS/Friend.swift" "$MODELS/Profile.swift" \
+  "$APP/Persistence.swift" "$MODELS/Message.swift" "$MODELS/Friend.swift" "$SRC/MQTTTopics.swift" "$MODELS/Profile.swift" \
   "$MODELS/MessageTypes.swift" "$MODELS/AppError.swift" \
   "$SRC/PeerID.swift" "$SRC/RatchetSession.swift" "$SRC/DoubleRatchet.swift" \
   "$SRC/AESService.swift" "$SRC/BiometricAudit.swift" "$SRC/MessageKeyStore.swift" \
@@ -464,7 +464,7 @@ echo "── Shared auth context (one prompt, two stores) ──"
 MAIN="$(stage SharedAuthContextTests.swift)"
 xcrun swiftc -O $COV_FLAGS \
   "$MAIN" TestSupport.swift Stubs.swift \
-  "$MODELS/Message.swift" "$MODELS/Friend.swift" "$MODELS/Profile.swift" \
+  "$MODELS/Message.swift" "$MODELS/Friend.swift" "$SRC/MQTTTopics.swift" "$MODELS/Profile.swift" \
   "$SRC/MessageKeyStore.swift" "$SRC/DeviceAuthCapability.swift" \
   "$SRC/AESService.swift" "$SRC/RatchetSession.swift" \
   "$SRC/DoubleRatchet.swift" "$SRC/PeerID.swift" \
@@ -477,7 +477,7 @@ echo "── Message at-rest tests ───────────────
 MAIN="$(stage MessageAtRestTests.swift)"
 xcrun swiftc -O $COV_FLAGS \
   "$MAIN" TestSupport.swift Stubs.swift \
-  "$MODELS/Message.swift" "$MODELS/Friend.swift" "$MODELS/Profile.swift" \
+  "$MODELS/Message.swift" "$MODELS/Friend.swift" "$SRC/MQTTTopics.swift" "$MODELS/Profile.swift" \
   "$SRC/MessageKeyStore.swift" "$SRC/DeviceAuthCapability.swift" \
   "$SRC/AESService.swift" "$SRC/RatchetSession.swift" \
   "$SRC/DoubleRatchet.swift" "$SRC/PeerID.swift" \

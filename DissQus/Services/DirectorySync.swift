@@ -98,6 +98,14 @@ final class DirectorySync {
             guard let row = upsert(id: dto.id, username: label(dto.username, dto.id),
                                    status: .accepted, profileId: profileId,
                                    serverIDs: serverIDs) else { continue }
+            // The friendship's topic ids. Written on every sync that carries
+            // them, not only the first: a re-friend mints new ones, and the old
+            // topics are dead. Only assigned when they differ — an unchanged
+            // write still dirties the context, and this runs on a timer.
+            if FriendTopics(convoID: dto.convo_id, handshakeID: dto.handshake_id) != nil {
+                if row.convoTopicID != dto.convo_id { row.convoTopicID = dto.convo_id }
+                if row.handshakeTopicID != dto.handshake_id { row.handshakeTopicID = dto.handshake_id }
+            }
             known.append(row)
         }
 

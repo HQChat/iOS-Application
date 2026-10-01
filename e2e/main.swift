@@ -62,30 +62,38 @@ try bob.publishPrekeys()
 
 // ── 1. Friend request ────────────────────────────────────────────────────────
 //
-// The server half — invite, accept, the mqtt_acl rows — is exercised by
-// services/server/test/e2e against a real broker. The client half is the one
-// that matters here: a key is pinned only if it hashes to the id that named it.
+// The server half — invite, accept, minting the friendship's topic ids — is
+// exercised by services/server/test/e2e against a real broker. The client half
+// is the one that matters here: a key is pinned only if it hashes to the id
+// that named it, and the topics are the ones the server handed out.
 
 print("1. friend request")
-check(alice.acceptFriend(bob.id, publicKey: bob.identityPk), "alice pins bob's key")
-check(bob.acceptFriend(alice.id, publicKey: alice.identityPk), "bob pins alice's key")
+// What /friends hands BOTH members: two random ids, the same on each side.
+func randomTopicID() -> String {
+    (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+}
+let aliceBob = FriendTopics(convoID: randomTopicID(), handshakeID: randomTopicID())!
+check(alice.acceptFriend(bob.id, publicKey: bob.identityPk, topics: aliceBob), "alice pins bob's key")
+check(bob.acceptFriend(alice.id, publicKey: alice.identityPk, topics: aliceBob), "bob pins alice's key")
 
 // The id is a commitment, so a substituted key is arithmetic to detect.
 var impostorKey = bob.identityPk
 impostorKey[impostorKey.startIndex] ^= 0xff
-check(!alice.acceptFriend(bob.id, publicKey: impostorKey),
+check(!alice.acceptFriend(bob.id, publicKey: impostorKey, topics: aliceBob),
       "…and a key that does not hash to that id is refused")
 
-// The ACL, as grantFriendTopic writes it: the conversation, both inboxes, and
-// the handshake topic — granted to the two members and to nobody else.
+// Who can reach what. The broker's static ACL lets anyone use an exact `cv/…`
+// or `hs/…` and anyone publish to an inbox; what keeps a third party off the
+// handshake topic is that nobody else was handed its id. The bus models that
+// knowledge as a grant: the two members, and nobody else.
 for (me, peer) in [(alice.id, bob.id), (bob.id, alice.id)] {
-    bus.grant(me, MQTTTopics.conversation(me, peer))
+    bus.grant(me, aliceBob.conversation)
     bus.grant(me, MQTTTopics.inbox(peer))
     bus.grant(me, MQTTTopics.inbox(me))
-    bus.grant(me, MQTTTopics.handshake(me, peer))
+    bus.grant(me, aliceBob.handshake)
 }
-check(bus.mayTouch(alice.id, MQTTTopics.handshake(alice.id, bob.id)),
-      "both members are granted the handshake topic")
+check(bus.mayTouch(alice.id, aliceBob.handshake),
+      "both members hold the handshake topic")
 
 // ── 2. First contact ─────────────────────────────────────────────────────────
 
@@ -99,7 +107,7 @@ check(bus.packets(on: MQTTTopics.inbox(bob.id)).count == 1,
 // Bob reads it — and does NOT open it. It is held pending a challenge.
 try bob.poll(peers: [alice.id])
 check(bob.inbox.isEmpty, "bob does NOT open the init on sight — it proves nothing about its sender")
-check(bus.packets(on: MQTTTopics.handshake(bob.id, alice.id)).count == 1,
+check(bus.packets(on: aliceBob.handshake).count == 1,
       "…he challenges instead")
 
 // Alice answers, Bob verifies, and only then is the message delivered.
@@ -334,7 +342,7 @@ let bobIds = bob.inbox.map(\.msgId)
 check(Set(bobIds).count == bobIds.count, "no message was delivered twice")
 
 // A replay of a real frame is refused, and does not disturb the session.
-let lastFromAlice = bus.packets(on: MQTTTopics.conversation(alice.id, bob.id))
+let lastFromAlice = bus.packets(on: aliceBob.conversation)
     .last { $0.publisher == alice.id }
 if let replay = lastFromAlice {
     let before = bob.inbox.count

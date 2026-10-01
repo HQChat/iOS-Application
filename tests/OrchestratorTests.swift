@@ -82,6 +82,9 @@ final class RefreshStub: URLProtocol, @unchecked Sendable {
 
 let ME   = String(repeating: "11", count: 32)
 let PEER = String(repeating: "22", count: 32)
+/// The friendship's topics, as /friends would hand them to both of us.
+let PEER_TOPICS = FriendTopics(convoID: String(repeating: "3", count: 64),
+                               handshakeID: String(repeating: "4", count: 64))!
 
 /// Run an async body from top-level code and wait for it. Safe here — unlike the
 /// @MainActor case in PersistenceTests, these are actor calls that do not need
@@ -141,19 +144,19 @@ Thread.sleep(forTimeInterval: 0.3)
 
 sem {
     backend.subscribed.removeAll()
-    await mqtt.subscribeFriend(PEER)
+    await mqtt.subscribeFriend(PEER, topics: PEER_TOPICS)
 }
 
 let topics = backend.subscribed.map(\.topic)
-check(topics.contains(MQTTTopics.conversation(ME, PEER)), "a friend's conversation topic is subscribed")
+check(topics.contains(PEER_TOPICS.conversation), "a friend's conversation topic is subscribed")
 check(topics.contains(MQTTTopics.presence(PEER)), "…and their presence")
-check(topics.contains(MQTTTopics.handshake(ME, PEER)),
+check(topics.contains(PEER_TOPICS.handshake),
       "…and the handshake topic, which is where an init is proved and without which first contact stalls")
 
 // QoS is not decoration: a conversation frame lost is a message lost, and
 // presence is a retained flag that the next update replaces anyway.
 for s in backend.subscribed {
-    if s.topic.hasPrefix("c/") || s.topic.hasPrefix("h/") {
+    if s.topic.hasPrefix("cv/") || s.topic.hasPrefix("hs/") {
         check(s.qos == 1, "\(s.topic) is QoS 1 — a dropped frame is a lost message")
     }
     if s.topic.hasSuffix("/presence") {
@@ -172,10 +175,10 @@ backend.deliver(.connected)
 Thread.sleep(forTimeInterval: 0.3)
 
 let restored = backend.subscribed.map(\.topic)
-check(restored.contains(MQTTTopics.conversation(ME, PEER)),
+check(restored.contains(PEER_TOPICS.conversation),
       "a reconnect re-subscribes the conversation topic")
 check(restored.contains(MQTTTopics.presence(PEER)), "…and presence")
-check(restored.contains(MQTTTopics.handshake(ME, PEER)),
+check(restored.contains(PEER_TOPICS.handshake),
       "…and the handshake topic, or first contact stops working after any blip")
 
 // ── Unsubscribing gives the whole set back ───────────────────────────────────
@@ -184,9 +187,28 @@ sem {
     backend.unsubscribed.removeAll()
     await mqtt.unsubscribeFriend(PEER)
 }
-check(backend.unsubscribed.contains(MQTTTopics.handshake(ME, PEER)),
+check(backend.unsubscribed.contains(PEER_TOPICS.handshake),
       "unfriending drops the handshake topic too — leaving it subscribed keeps a channel "
-      + "open to somebody the ACL no longer grants")
+      + "open to somebody who is no longer a friend")
+check(backend.unsubscribed.contains(PEER_TOPICS.conversation), "…and the conversation topic")
+
+// ── A re-friend moves to the NEW topics ──────────────────────────────────────
+//
+// Unfriend + re-friend mints fresh topic ids. A directory sync that brings them
+// must leave the old ones, not hold both: the ex-friend still knows the old ids.
+let MOVED = FriendTopics(convoID: String(repeating: "5", count: 64),
+                         handshakeID: String(repeating: "6", count: 64))!
+sem {
+    await mqtt.subscribeFriend(PEER, topics: PEER_TOPICS)
+    backend.subscribed.removeAll()
+    backend.unsubscribed.removeAll()
+    await mqtt.subscribeFriend(PEER, topics: MOVED)
+}
+check(backend.unsubscribed.contains(PEER_TOPICS.conversation)
+      && backend.unsubscribed.contains(PEER_TOPICS.handshake),
+      "new topic ids leave the retired ones")
+check(backend.subscribed.map(\.topic).contains(MOVED.conversation), "…and subscribe the new conversation")
+sem { await mqtt.unsubscribeFriend(PEER) }
 
 // ── Inbound routing ──────────────────────────────────────────────────────────
 //
@@ -205,8 +227,8 @@ sem {
     await mqtt.setPresenceHandler { id, online in seen.presence.append((id, online)) }
 }
 
-backend.deliver(.message(topic: MQTTTopics.conversation(ME, PEER), payload: Data([1])))
-backend.deliver(.message(topic: MQTTTopics.handshake(ME, PEER), payload: Data([2])))
+backend.deliver(.message(topic: PEER_TOPICS.conversation, payload: Data([1])))
+backend.deliver(.message(topic: PEER_TOPICS.handshake, payload: Data([2])))
 backend.deliver(.message(topic: MQTTTopics.graph(ME), payload: Data()))
 backend.deliver(.message(topic: MQTTTopics.presence(PEER), payload: Data(#"{"s":"online"}"#.utf8)))
 // Nothing routes this one. It must reach no handler at all rather than the

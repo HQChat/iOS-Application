@@ -142,9 +142,9 @@ redactors and the sensitive-key predicate. It found a ReDoS that hung both
 engines for over ten minutes on a 71-character input, and a key-name split that
 made the *client* — the side that holds plaintext — redact less than the server.
 
-**`handshake-verdict` (built).** The `h/{friendshipHash}` frame, both directions.
+**`handshake-verdict` (built).** The `hs/{handshake_id}` frame, both directions.
 That exchange is what closes the gap an `init` leaves open — an init is built
-from public values and lands on a topic every friend may publish to, so the
+from public values and lands on a topic anyone may publish to, so the
 challenge and proof are what establish who is actually there. Both ends parse it
 with hand-written offset arithmetic and the only thing comparing them was five
 pinned vectors they agree on by construction. Three modes: `decode`, `encode`

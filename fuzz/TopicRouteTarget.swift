@@ -36,8 +36,9 @@ import Foundation
 ///      different kind, the corroboration silently stops happening.
 ///
 /// What this CANNOT check is entitlement — that a peer may publish here at all.
-/// That lives in the broker's SQL authorizer and is exercised by
-/// services/server/test/e2e/mqtt.test.ts ("the topic ACL refuses a stranger").
+/// That lives in the broker's static ACL (infra/deploy/emqx/acl.conf) and is
+/// exercised by services/server/test/e2e/mqtt.test.ts ("the static ACL keeps a
+/// stranger out of a conversation").
 func fuzzTopicRoute(_ input: Data) {
     // Topics are text. A non-UTF8 input is not a topic the transport could have
     // delivered, so decode losslessly and skip what cannot be one — feeding
@@ -73,9 +74,9 @@ func fuzzTopicRoute(_ input: Data) {
                      "a routed u/ topic whose peer cannot be read: \(topic.debugDescription)")
 
     case .conversation:
-        precondition(topic.hasPrefix("c/"), "conversation route on \(topic.debugDescription)")
+        precondition(topic.hasPrefix("cv/"), "conversation route on \(topic.debugDescription)")
     case .handshake:
-        precondition(topic.hasPrefix("h/"), "handshake route on \(topic.debugDescription)")
+        precondition(topic.hasPrefix("hs/"), "handshake route on \(topic.debugDescription)")
     case .unroutable:
         break
     }
@@ -93,14 +94,14 @@ func fuzzTopicRoute(_ input: Data) {
     // when the kind is unknown, which is exactly what a refusal produces.
     //
     // What must hold is that a conversation or handshake topic never names a
-    // peer. Those are derived from a friendship hash, and a contact id read out
-    // of one would be a conversation attributed to whoever that id belongs to.
+    // peer. Those name a random friendship id, and a contact id read out of one
+    // would be a conversation attributed to whoever that id belongs to.
     if let named = MQTTTopics.peer(in: topic) {
         precondition(PeerID.isWellFormed(named), "peer(in:) named a malformed id")
         precondition(segments.count == 3 && String(segments[1]) == named,
                      "peer(in:) named something other than the middle segment of \(topic.debugDescription)")
-        precondition(!topic.hasPrefix("c/") && !topic.hasPrefix("h/"),
-                     "peer(in:) named \(named.debugDescription) on a hash-derived topic — \(topic.debugDescription)")
+        precondition(!topic.hasPrefix("cv/") && !topic.hasPrefix("hs/"),
+                     "peer(in:) named \(named.debugDescription) on a friendship topic — \(topic.debugDescription)")
     }
 
     // ORACLE C, driven off the fuzzed bytes so the ids vary rather than being
@@ -108,9 +109,12 @@ func fuzzTopicRoute(_ input: Data) {
     let a = PeerID.sha256Hex(topic)
     let b = PeerID.sha256Hex(topic + "!")
 
-    precondition(MQTTTopics.route(MQTTTopics.conversation(a, b)) == .conversation,
+    // Two ids of the shape the server mints, standing in for a friendship.
+    let pair = FriendTopics(convoID: a, handshakeID: b)!
+
+    precondition(MQTTTopics.route(pair.conversation) == .conversation,
                  "a built conversation topic did not route as one")
-    precondition(MQTTTopics.route(MQTTTopics.handshake(a, b)) == .handshake,
+    precondition(MQTTTopics.route(pair.handshake) == .handshake,
                  "a built handshake topic did not route as one")
     precondition(MQTTTopics.route(MQTTTopics.inbox(a)) == .inbox,
                  "a built inbox topic did not route as one")
@@ -119,30 +123,32 @@ func fuzzTopicRoute(_ input: Data) {
     precondition(MQTTTopics.route(MQTTTopics.presence(a)) == .presence(peerID: a),
                  "a built presence topic did not route to its own id")
 
-    // Both ends must derive one topic from a pair, in either order, or two peers
-    // subscribe to different topics and neither ever hears the other.
-    precondition(MQTTTopics.conversation(a, b) == MQTTTopics.conversation(b, a),
-                 "conversation topic is not symmetric")
-    precondition(MQTTTopics.handshake(a, b) == MQTTTopics.handshake(b, a),
-                 "handshake topic is not symmetric")
-
-    // The kinds must not collide: a handshake topic is a separate grant from the
-    // conversation, and that separation is what keeps a challenge off a topic
-    // every friend may publish to.
-    precondition(MQTTTopics.conversation(a, b) != MQTTTopics.handshake(a, b),
-                 "conversation and handshake derive the same topic")
+    // The kinds must not collide: a handshake topic is a separate channel from
+    // the conversation, and that separation is what keeps a challenge off a
+    // topic the peer's other traffic uses.
+    precondition(pair.conversation != pair.handshake,
+                 "conversation and handshake build the same topic")
     precondition(MQTTTopics.inbox(a) != MQTTTopics.graph(a),
                  "inbox and graph derive the same topic")
+
+    // FriendTopics accepts ONLY the minted shape. The fuzzed bytes are almost
+    // never 64 lowercase hex, and must never become a topic when they are not.
+    if FriendTopics(convoID: topic, handshakeID: b) != nil {
+        precondition(topic.count == 64 && topic.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) },
+                     "FriendTopics accepted \(topic.debugDescription) as a topic id")
+    }
 
     // An init is delivered to an inbox, a message to the conversation. If these
     // ever coincided, a frame that proves nothing about its sender would arrive
     // on the channel whose whole job is to corroborate one.
-    precondition(MQTTTopics.expected(forInit: true, sender: b, me: a) == MQTTTopics.inbox(a),
+    precondition(MQTTTopics.expected(forInit: true, senderTopics: pair, me: a) == MQTTTopics.inbox(a),
                  "expected(init) is not the recipient's inbox")
-    precondition(MQTTTopics.expected(forInit: false, sender: b, me: a) == MQTTTopics.conversation(a, b),
+    precondition(MQTTTopics.expected(forInit: false, senderTopics: pair, me: a) == pair.conversation,
                  "expected(msg) is not the conversation topic")
-    precondition(MQTTTopics.expected(forInit: true, sender: b, me: a)
-                 != MQTTTopics.expected(forInit: false, sender: b, me: a),
+    precondition(MQTTTopics.expected(forInit: false, senderTopics: nil, me: a) == nil,
+                 "expected(msg) with no topics matched something")
+    precondition(MQTTTopics.expected(forInit: true, senderTopics: pair, me: a)
+                 != MQTTTopics.expected(forInit: false, senderTopics: pair, me: a),
                  "an init and a msg from the same peer expect the same topic")
 
     // describe() only ever reaches a log line, but it walks the string by hand

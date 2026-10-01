@@ -17,6 +17,14 @@ import Foundation
 let ID_A = String(repeating: "a", count: 64)
 let ID_B = String(repeating: "b", count: 64)
 
+/// A friendship's topics as the server would hand them out: two random ids.
+func topics(_ convo: Character, _ shake: Character) -> FriendTopics {
+    FriendTopics(convoID: String(repeating: convo, count: 64),
+                 handshakeID: String(repeating: shake, count: 64))!
+}
+let AB = topics("1", "2")
+let AC = topics("3", "4")
+
 func expect(_ actual: InboundRoute, _ expected: InboundRoute, _ what: String) {
     guard actual == expected else {
         print("❌ \(what): expected \(expected), got \(actual)")
@@ -45,15 +53,37 @@ expect(MQTTTopics.route(MQTTTopics.graph(ID_A)), .graph,
 
 expect(MQTTTopics.route(MQTTTopics.presence(ID_A)), .presence(peerID: ID_A),
        "presence routes and carries the peer id")
-expect(MQTTTopics.route(MQTTTopics.conversation(ID_A, ID_B)), .conversation,
+expect(MQTTTopics.route(AB.conversation), .conversation,
        "a conversation topic routes")
+expect(MQTTTopics.route(AB.handshake), .handshake,
+       "a handshake topic routes")
 
-// The conversation topic is symmetric — both ends must derive the same one, or
-// each would subscribe to a topic the other never publishes to.
-guard MQTTTopics.conversation(ID_A, ID_B) == MQTTTopics.conversation(ID_B, ID_A) else {
-    print("❌ conversation topic is not symmetric"); exit(1)
+// The topics are the server's ids, verbatim, under their own prefixes.
+guard AB.conversation == "cv/" + String(repeating: "1", count: 64),
+      AB.handshake == "hs/" + String(repeating: "2", count: 64) else {
+    print("❌ topics are cv/{convo_id} and hs/{handshake_id}"); exit(1)
 }
-print("✓ the conversation topic is the same from both sides")
+print("✓ the topics are cv/{convo_id} and hs/{handshake_id}")
+
+// Only the shape the server mints. Anything else — a server that predates the
+// ids, a truncated or uppercase value, a slash smuggled into a topic string —
+// yields no topics at all rather than a topic built from it.
+for (convo, shake, what) in [
+    (nil, String(repeating: "2", count: 64), "a missing conversation id"),
+    (String(repeating: "1", count: 64), nil, "a missing handshake id"),
+    (String(repeating: "1", count: 63), String(repeating: "2", count: 64), "a short id"),
+    (String(repeating: "A", count: 64), String(repeating: "2", count: 64), "an uppercase id"),
+    (String(repeating: "1", count: 62) + "/#", String(repeating: "2", count: 64), "an id carrying a wildcard"),
+] as [(String?, String?, String)] {
+    guard FriendTopics(convoID: convo, handshakeID: shake) == nil else {
+        print("❌ \(what) was accepted as a topic id"); exit(1)
+    }
+    print("✓ \(what) yields no topics")
+}
+
+// The old derivable topics are gone: nothing routes them as a conversation.
+expectUnroutable("c/" + String(repeating: "1", count: 64), "a retired c/ topic")
+expectUnroutable("h/" + String(repeating: "1", count: 64), "a retired h/ topic")
 
 // Shape checks: a middle segment that is not a client id names nobody, and
 // treating it as a peer would show a contact that never comes online.
@@ -70,7 +100,8 @@ guard MQTTTopics.route(MQTTTopics.graph(ID_A)) != MQTTTopics.route(MQTTTopics.in
 print("✓ graph, inbox and presence are three different routes")
 expectUnroutable("u/\(ID_A)", "a truncated u/ topic")
 expectUnroutable("", "the empty topic")
-expectUnroutable("c/", "a conversation topic with no hash")
+expectUnroutable("cv/", "a conversation topic with no id")
+expectUnroutable("hs/", "a handshake topic with no id")
 expectUnroutable("nonsense", "an unprefixed topic")
 
 // An uppercase id is NOT the same identity — ids are lowercase hex by
@@ -81,17 +112,14 @@ expectUnroutable("u/\(String(repeating: "A", count: 64))/presence",
 print("")
 print("── subscription ledger ────────────────────────")
 // A subscription is re-offered on every connect. A topic the broker REFUSES
-// must therefore be forgotten, not retried: deny_action = disconnect means the
-// refusal also drops the link, so a topic left in the wanted set drops the next
-// connection too, and the next.
-//
-// This is the "A adds B and B's app loops forever" report. B's directory sync
-// returned the pending invite alongside accepted friends, B subscribed to a
-// conversation whose ACL grant is only written on ACCEPT, and the refusal took
-// the link down before B could reach the button that would have created it.
+// is forgotten, not retried. Under the old deny_action = disconnect a refusal
+// also dropped the link, so a topic left in the wanted set dropped every
+// connection after it — the "A adds B and B's app loops forever" report. The
+// broker only refuses the packet now, but re-offering a refused topic is still
+// pointless: the next directory sync re-asks with the topics the server holds.
 
 var ledger = SubscriptionLedger()
-ledger.want("c/hash", qos: 1)
+ledger.want(AB.conversation, qos: 1)
 ledger.want("u/\(ID_A)/presence", qos: 0)
 guard ledger.toSubscribe.count == 2 else { print("❌ two wanted topics"); exit(1) }
 print("✓ wanted topics are offered on connect")
@@ -99,8 +127,8 @@ print("✓ wanted topics are offered on connect")
 guard ledger.toSubscribe.first?.qos == 1 else { print("❌ qos is preserved"); exit(1) }
 print("✓ …at the qos they were asked for")
 
-ledger.refused("c/hash")
-guard !ledger.toSubscribe.contains(where: { $0.topic == "c/hash" }) else {
+ledger.refused(AB.conversation)
+guard !ledger.toSubscribe.contains(where: { $0.topic == AB.conversation }) else {
     print("❌ a refused topic must not be re-offered"); exit(1)
 }
 print("✓ a refused topic is NOT re-offered on the next connect")
@@ -108,15 +136,15 @@ print("✓ a refused topic is NOT re-offered on the next connect")
 guard ledger.toSubscribe.count == 1 else { print("❌ other topics survive a refusal"); exit(1) }
 print("✓ …and a refusal does not disturb the topics that were granted")
 
-// Once the grant finally exists — the invite is accepted — asking again works.
-ledger.want("c/hash", qos: 1)
-guard ledger.toSubscribe.contains(where: { $0.topic == "c/hash" }) else {
+// Once a sync names it again, asking again works.
+ledger.want(AB.conversation, qos: 1)
+guard ledger.toSubscribe.contains(where: { $0.topic == AB.conversation }) else {
     print("❌ a refused topic can be asked for again"); exit(1)
 }
-print("✓ a refused topic can be asked for again once a grant exists")
+print("✓ a refused topic can be asked for again")
 
-ledger.forget("c/hash")
-guard !ledger.toSubscribe.contains(where: { $0.topic == "c/hash" }) else {
+ledger.forget(AB.conversation)
+guard !ledger.toSubscribe.contains(where: { $0.topic == AB.conversation }) else {
     print("❌ unfriending forgets the topic"); exit(1)
 }
 print("✓ unfriending forgets the topic")
@@ -138,44 +166,41 @@ let me   = String(repeating: "a", count: 64)
 let peerB = String(repeating: "b", count: 64)
 let peerC = String(repeating: "c", count: 64)
 
-guard MQTTTopics.expected(forInit: true, sender: peerB, me: me) == MQTTTopics.inbox(me) else {
+guard MQTTTopics.expected(forInit: true, senderTopics: AB, me: me) == MQTTTopics.inbox(me) else {
     print("❌ an init belongs on our own inbox"); exit(1)
 }
 print("✓ an init is expected on OUR inbox — the only place one has business being")
 
-guard MQTTTopics.expected(forInit: false, sender: peerB, me: me)
-        == MQTTTopics.conversation(me, peerB) else {
-    print("❌ a msg belongs on the shared conversation topic"); exit(1)
+guard MQTTTopics.expected(forInit: false, senderTopics: AB, me: me) == AB.conversation else {
+    print("❌ a msg belongs on the conversation topic of our friendship with its sender"); exit(1)
 }
-print("✓ a msg is expected on the conversation topic the two ids derive")
+print("✓ a msg is expected on the conversation topic of our friendship with its sender")
 
 // The attack this closes: C is a friend, so C may publish on our inbox and on
 // the topic we share with C. Neither is where a frame claiming to be from B may
 // arrive, so both are refused.
-guard MQTTTopics.expected(forInit: false, sender: peerB, me: me) != MQTTTopics.inbox(me) else {
+guard MQTTTopics.expected(forInit: false, senderTopics: AB, me: me) != MQTTTopics.inbox(me) else {
     print("❌ a msg naming B must not be accepted on our inbox"); exit(1)
 }
-print("✓ a msg naming B is NOT expected on our inbox — C could publish there")
+print("✓ a msg naming B is NOT expected on our inbox — anyone can publish there")
 
-guard MQTTTopics.expected(forInit: false, sender: peerB, me: me)
-        != MQTTTopics.conversation(me, peerC) else {
+guard MQTTTopics.expected(forInit: false, senderTopics: AB, me: me) != AC.conversation else {
     print("❌ a msg naming B must not be accepted on C's conversation topic"); exit(1)
 }
-print("✓ …nor on the topic we share with C, which C has `all` on")
+print("✓ …nor on the topic we share with C, which C can publish to")
 
-guard MQTTTopics.expected(forInit: true, sender: peerB, me: me)
-        != MQTTTopics.conversation(me, peerB) else {
+guard MQTTTopics.expected(forInit: true, senderTopics: AB, me: me) != AB.conversation else {
     print("❌ an init must not be accepted on the conversation topic"); exit(1)
 }
 print("✓ …and an init is not accepted on the conversation topic either")
 
-// Both ends derive the same topic from the same pair, in either order — the
-// property that makes this check safe to enforce rather than merely log.
-guard MQTTTopics.expected(forInit: false, sender: peerB, me: me)
-        == MQTTTopics.expected(forInit: false, sender: me, me: peerB) else {
-    print("❌ sender and recipient must agree on the topic"); exit(1)
+// A msg from a sender we hold no topics for has NO expected topic — it cannot
+// be tied to anything, so it is dropped rather than matched against a guess.
+guard MQTTTopics.expected(forInit: false, senderTopics: nil, me: me) == nil else {
+    print("❌ a msg from a sender without topics must have no expected topic"); exit(1)
 }
-print("✓ sender and recipient derive the same topic, so the rule is symmetric")
+print("✓ a msg from a sender we hold no topics for matches nothing")
+_ = (peerB, peerC)
 
 // ── Empty topic levels ───────────────────────────────────────────────────────
 //

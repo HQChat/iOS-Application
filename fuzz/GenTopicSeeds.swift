@@ -13,10 +13,11 @@ try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectorie
 
 let alice = PeerID.sha256Hex("alice")
 let bob   = PeerID.sha256Hex("bob")
+let pair  = FriendTopics(convoID: PeerID.sha256Hex("convo"), handshakeID: PeerID.sha256Hex("shake"))!
 
 var seeds: [String: String] = [
-    "conversation":      MQTTTopics.conversation(alice, bob),
-    "handshake":         MQTTTopics.handshake(alice, bob),
+    "conversation":      pair.conversation,
+    "handshake":         pair.handshake,
     "inbox":             MQTTTopics.inbox(alice),
     "graph":             MQTTTopics.graph(alice),
     "presence":          MQTTTopics.presence(alice),
@@ -25,8 +26,10 @@ var seeds: [String: String] = [
     // than having to discover it.
     "empty":             "",
     "slash":             "/",
-    "c-empty-hash":      "c/",
-    "h-empty-hash":      "h/",
+    "cv-empty-id":       "cv/",
+    "hs-empty-id":       "hs/",
+    "retired-c":         "c/\(alice)",
+    "retired-h":         "h/\(alice)",
     "u-only":            "u/",
     "u-two-segments":    "u/\(alice)",
     "u-four-segments":   "u/\(alice)/presence/extra",

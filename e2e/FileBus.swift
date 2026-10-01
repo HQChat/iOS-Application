@@ -146,7 +146,9 @@ final class FileBus {
     private var cursors: [String: [String: Int]] = [:]
     /// topic → the packets published to it, in order.
     private var log: [String: [BusPacket]] = [:]
-    /// The ACL, mirroring `mqtt_acl`: who may touch which topic.
+    /// Who may touch which topic. Not the broker's ACL literally — that one lets
+    /// anyone use an exact `cv/…` or `hs/…` — but who HOLDS each topic's id,
+    /// which is what that ACL reduces to once wildcards are off.
     private var grants: [String: Set<String>] = [:]
 
     /// What delivery is allowed to do to a packet, and the generator that decides.
@@ -175,7 +177,7 @@ final class FileBus {
     // MARK: - The ACL
     //
     // Modelled because it carries protocol meaning: the handshake topic is safe
-    // ONLY because a third party has no grant on it, and a harness that let
+    // ONLY because a third party was never handed its id, and a harness that let
     // everyone read everything would prove nothing about that.
 
     func grant(_ who: String, _ topic: String) {

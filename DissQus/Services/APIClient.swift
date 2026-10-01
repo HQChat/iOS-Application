@@ -23,7 +23,16 @@ actor APIClient {
     /// used to be a 14474-character public key on every row of every poll (about
     /// 160 kB a minute for eleven friends). The key is fetched separately, once,
     /// by `peerKey(id:)`.
-    struct FriendDTO: Decodable { let id: String; let username: String? }
+    ///
+    /// `convo_id` / `handshake_id` are the friendship's topic capabilities — see
+    /// `FriendTopics`. Optional so an older server decodes rather than failing
+    /// the whole directory.
+    struct FriendDTO: Decodable {
+        let id: String
+        let username: String?
+        let convo_id: String?
+        let handshake_id: String?
+    }
     /// `username` is optional: the server sends null for an account that has not
     /// claimed a handle, rather than a shared placeholder. That matters because
     /// the client detects a changed identity by finding a different id under the

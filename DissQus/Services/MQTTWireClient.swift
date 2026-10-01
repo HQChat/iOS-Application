@@ -200,10 +200,10 @@ enum MQTTCodec {
     /// The packet id a SUBACK answers, and its per-topic return codes.
     ///
     /// A return code >= 0x80 is a REFUSAL — in this deployment always an
-    /// authorization decision, since the broker's only authorizer is the topic
-    /// ACL. Refusals do not arrive as errors and do not arrive as silence, which
-    /// is why reading this body is the difference between "the ACL has no row
-    /// for this client" and an unexplained reconnect loop.
+    /// authorization decision, since the broker's only authorizer is the static
+    /// topic ACL. Refusals do not arrive as errors and do not arrive as silence,
+    /// which is why reading this body is the difference between "the broker
+    /// refused this topic" and a subscription that quietly receives nothing.
     ///
     /// Returns nil for a body too short to carry an id and at least one code.
     static func subackReturnCodes(_ body: Data) -> (packetID: UInt16, codes: [UInt8])? {
@@ -605,13 +605,12 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
     /// offline publish that `MQTTService.disconnect()` sends a moment before it
     /// tears the socket down and so can never be acked.
     ///
-    /// That is not a packet the broker ignores. EMQX runs `deny_action =
-    /// disconnect` (infra/deploy/emqx/emqx.conf), so one publish to a topic this
-    /// key has no grant on drops the connection — immediately after CONNACK,
-    /// before anything else can happen. The reconnect re-sends it and is dropped
-    /// again, which is a loop nothing times out of and nothing explains: the
-    /// broker's own log calls it an authorization failure on a topic belonging to
-    /// an account the user is no longer signed in as.
+    /// Under the old `deny_action = disconnect`, one publish to a topic this key
+    /// was not allowed dropped the connection immediately after CONNACK, and the
+    /// reconnect re-sent it — a loop nothing timed out of. The broker now only
+    /// refuses the packet (`deny_action = ignore`, infra/deploy/emqx/emqx.conf),
+    /// but another account's queue is still not this identity's to send: its
+    /// frames name the wrong sender and would be refused or misattributed.
     /// Called by `connect(...)`, and directly by the tests — the loop it prevents
     /// needs a broker to reproduce, but the queue it empties does not.
     func adoptIdentity(_ clientID: String) {
@@ -733,10 +732,11 @@ final class MQTTWireClient: MQTTBackend, @unchecked Sendable {
             // and does not fail to answer: it SUBACKs with return code 0x80.
             // Ignoring the body meant an ACL denial looked exactly like success
             // — the app sat there subscribed to nothing, receiving nothing, with
-            // a clean log. Under `deny_action = disconnect` the broker ALSO drops
-            // the link, which arrives here as a bare POSIX 57 "Socket is not
-            // connected" on the next write: a reconnect loop whose real cause is
-            // a missing `mqtt_acl` row and which says so nowhere.
+            // a clean log. Under the old `deny_action = disconnect` the broker
+            // ALSO dropped the link, which arrived here as a bare POSIX 57
+            // "Socket is not connected" on the next write: a reconnect loop whose
+            // real cause said so nowhere. The broker only refuses the packet now
+            // (`deny_action = ignore`), which makes this the ONLY signal.
             //
             // The server-side bot has checked this since the outage that taught
             // it to (bot.ts subscribeConversation). This client never did.

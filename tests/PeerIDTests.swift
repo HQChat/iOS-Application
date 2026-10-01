@@ -113,42 +113,29 @@ check(!PeerID.isWellFormed(String(repeating: "g", count: 64)), "non-hex is not a
 
 // --- friendshipHash -------------------------------------------------------
 //
-// The conversation topic. 001_schema.sql has claimed since it was written that
-// this has "a Swift counterpart and a cross-impl test vector"; the counterpart
-// (MQTTTopics.conversation) existed, the vector did not.
-//
-// Recomputed here with the same construction MQTTTopics uses, so this file can
-// stay free of the MQTT stack while still pinning the value that decides
-// whether two members of a friendship subscribe to the same topic at all.
-
-func conversationTopic(_ a: String, _ b: String) -> String {
-    let joined = [a, b].sorted().joined()
-    return "c/" + PeerID.sha256Hex(joined)
-}
+// What `POST /report` names a conversation by, and the server derives its
+// members from. It was the conversation TOPIC until topics became random
+// per-friendship ids; a report that disagrees with the server about it names a
+// conversation that does not exist.
 
 var hashesMatch = true
 for f in friendships {
     guard let a = f["a"] as? String, let b = f["b"] as? String,
-          let topic = f["topic"] as? String else { continue }
-    if conversationTopic(a, b) != topic {
+          let hash = f["hash"] as? String else { continue }
+    if MQTTTopics.friendshipHash(a, b) != hash {
         hashesMatch = false
-        print("     ✗ \(a.prefix(8))…/\(b.prefix(8))…: produced \(conversationTopic(a, b).prefix(16))…, expected \(topic.prefix(16))…")
+        print("     ✗ \(a.prefix(8))…/\(b.prefix(8))…: produced \(MQTTTopics.friendshipHash(a, b).prefix(16))…, expected \(hash.prefix(16))…")
     }
 }
-check(hashesMatch, "the conversation topic matches the pinned vectors")
+check(hashesMatch, "friendshipHash matches the pinned vectors")
 
 if friendships.count >= 2,
-   let ab = friendships[0]["topic"] as? String,
-   let ba = friendships[1]["topic"] as? String {
+   let ab = friendships[0]["hash"] as? String,
+   let ba = friendships[1]["hash"] as? String {
     // The same pair reversed. One row serves both directions only because this
     // holds — and the `id_lo < id_hi` CHECK in 004 carries COLLATE "C" for the
     // same reason.
-    check(ab == ba, "the topic is order-independent")
-}
-
-if let topic = friendships[0]["topic"] as? String {
-    // It used to be `c/{hash}` beside a 14474-character pk in the same ACL row.
-    check(topic.count == 66, "a conversation topic is 66 characters")
+    check(ab == ba, "the hash is order-independent")
 }
 
 finish()

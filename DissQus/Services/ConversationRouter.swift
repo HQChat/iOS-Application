@@ -111,8 +111,12 @@ final class ConversationRouter {
     /// is from someone the server already considers a contact and we simply have
     /// not learned about yet. That is precisely what a resync fixes.
     private func friendResolving(_ id: String) async -> Friend? {
-        if let known = friend(withID: id) { return known }
-        guard !id.isEmpty, !resyncedFor.contains(id) else { return nil }
+        // A row with no topic ids is resynced too: it is a contact the directory
+        // has not described since the friendship was accepted (or since this
+        // build first ran), and without the ids its handshake has nowhere to go.
+        let known = friend(withID: id)
+        if let known, known.topics != nil { return known }
+        guard !id.isEmpty, !resyncedFor.contains(id) else { return known }
         resyncedFor.insert(id)
         dlog("[ConversationRouter] · frame from an unknown \(id.prefix(8))… — resyncing the directory")
         ProtocolLog.record(.directoryResyncedForUnknownSender(peer: id))
@@ -189,15 +193,15 @@ final class ConversationRouter {
         dlog("[ConversationRouter] 🔐 challenged \(friend.username) — holding their init")
     }
 
-    /// A challenge or a proof arrived on `h/{friendshipHash}`.
+    /// A challenge or a proof arrived on `hs/{handshake_id}`.
     func handleHandshake(_ raw: Data, topic: String) async {
         guard let frame = Handshake.decode(raw) else { return }
         guard !myID.isEmpty, frame.to == myID, frame.from != myID else { return }
-        // The topic is derived from the two ids, so a frame claiming to be from
-        // a peer must arrive on the topic that peer's id builds — the same rule
-        // `handle` applies to conversation frames.
-        guard topic == MQTTTopics.handshake(myID, frame.from) else { return }
         guard let friend = friend(withID: frame.from), !friend.isVanished else { return }
+        // A frame claiming to be from a peer must arrive on the handshake topic
+        // of OUR friendship with that peer — the same rule `handle` applies to
+        // conversation frames. No topics yet means no match.
+        guard let topics = friend.topics, topic == topics.handshake else { return }
 
         switch frame.kind {
         case .challenge:
@@ -283,13 +287,19 @@ final class ConversationRouter {
             return
         }
 
-        let expected = MQTTTopics.expected(forInit: envelope.t == .initiate,
-                                           sender: envelope.sender, me: myID)
-        guard topic == expected else {
+        // For a `msg` the expected topic is our friendship's conversation, from
+        // the row we already hold — looked up WITHOUT `friendResolving`, so a
+        // frame on a topic we cannot tie to its sender spends no resync. For
+        // an `init` it is our inbox, and nothing about the sender is needed.
+        let isInit = envelope.t == .initiate
+        let senderTopics = isInit ? nil : friend(withID: envelope.sender)?.topics
+        let expected = MQTTTopics.expected(forInit: isInit, senderTopics: senderTopics, me: myID)
+        guard let expected, topic == expected else {
             dlog("[ConversationRouter] ❌ \(kindName(envelope)) from "
                  + "\(envelope.sender.prefix(8))… arrived on \(MQTTTopics.describe(topic)) — dropped")
             ProtocolLog.record(.dropped(stage: "topic-binding", peerID: envelope.sender,
-                                        reason: "a \(kindName(envelope)) from this sender may only arrive on \(MQTTTopics.describe(expected))"))
+                                        reason: expected.map { "a \(kindName(envelope)) from this sender may only arrive on \(MQTTTopics.describe($0))" }
+                                            ?? "no conversation topic is known for this sender"))
             return
         }
 

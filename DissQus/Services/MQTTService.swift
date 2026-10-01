@@ -17,8 +17,9 @@ enum MQTTEvent {
     case disconnected(Error?)
     case message(topic: String, payload: Data)
     /// The broker answered a SUBSCRIBE with a failure return code (>= 0x80).
-    /// Always an authorization decision here: the topic has no `mqtt_acl` row
-    /// for this client id.
+    /// Always an authorization decision here: the static ACL (acl.conf) does not
+    /// allow that topic to this client id — a wildcard, someone else's inbox, or
+    /// a retired `c/`/`h/` topic from an older build.
     case subscribeRefused(topic: String, code: UInt8)
     /// A QoS-1 publish is being re-sent after a reconnect.
     case publishReplayed(topic: String, attempt: Int)
@@ -115,17 +116,14 @@ actor MQTTService {
     /// (retained) and restores subscriptions on success.
     func connect(id: String) async throws {
         // A different id is a different account, and none of the state below
-        // carries over to it. `desiredTopics` is keyed by OUR id —
-        // `c/{hash(me, friend)}` — so restoring it after a profile switch
-        // re-subscribes to the previous profile's conversations, which this
-        // identity holds no grant on. EMQX runs `deny_action = disconnect`, so
-        // that is not a refused SUBACK: the broker drops the connection the
-        // moment CONNACK has landed, the reconnect asks for the same topics, and
-        // the app sits in a loop that only quitting it clears. Presence goes with
-        // it — an online set belonging to the account we just left is not ours to
-        // report.
+        // carries over to it. The wanted topics include the previous profile's
+        // own inbox and graph, which this identity may not subscribe to, and its
+        // conversations, which this identity has no business reading. Presence
+        // goes with it — an online set belonging to the account we just left is
+        // not ours to report.
         if let previous = myID, previous != id {
             desired.removeAll()
+            followed.removeAll()
             onlineFriends.removeAll()
         }
         myID = id
@@ -238,46 +236,60 @@ actor MQTTService {
 
     // MARK: Subscriptions
 
-    /// Follow a friend's conversation + presence. Recorded so a reconnect
-    /// restores it.
-    func subscribeFriend(_ friendID: String) {
-        guard let me = myID, !friendID.isEmpty else { return }
-        desired.want(MQTTTopics.conversation(me, friendID), qos: 1)
+    /// The topics each followed friend was subscribed on. Kept so an unfriend
+    /// can leave them, and so a re-friend — which mints NEW topic ids — leaves
+    /// the old ones rather than holding both.
+    private var followed: [String: FriendTopics] = [:]
+
+    /// Follow a friend's conversation + presence, on the topics the directory
+    /// handed out. Recorded so a reconnect restores it.
+    func subscribeFriend(_ friendID: String, topics: FriendTopics) {
+        guard myID != nil, !friendID.isEmpty else { return }
+        if let old = followed[friendID], old != topics {
+            // Re-friended between two syncs: the old ids are retired.
+            for t in [old.conversation, old.handshake] {
+                desired.forget(t)
+                backend.unsubscribe(t)
+            }
+        }
+        followed[friendID] = topics
+        desired.want(topics.conversation, qos: 1)
         desired.want(MQTTTopics.presence(friendID), qos: 0)
-        // The handshake topic rides with the conversation: they are granted
+        // The handshake topic rides with the conversation: they are handed out
         // together and there is no reason to hold one without the other.
-        desired.want(MQTTTopics.handshake(me, friendID), qos: 1)
+        desired.want(topics.handshake, qos: 1)
         guard isConnected else { return }
-        backend.subscribe(MQTTTopics.conversation(me, friendID), qos: 1)
+        backend.subscribe(topics.conversation, qos: 1)
         backend.subscribe(MQTTTopics.presence(friendID), qos: 0)
-        backend.subscribe(MQTTTopics.handshake(me, friendID), qos: 1)
+        backend.subscribe(topics.handshake, qos: 1)
         ProtocolLog.record(.subscribed(topic: .conversation, peer: friendID))
         ProtocolLog.record(.subscribed(topic: .presence, peer: friendID))
     }
 
-    func subscribeFriends(_ friendIDs: [String]) { friendIDs.forEach { subscribeFriend($0) } }
+    func subscribeFriends(_ friends: [(id: String, topics: FriendTopics)]) {
+        friends.forEach { subscribeFriend($0.id, topics: $0.topics) }
+    }
 
     /// Stop following a friend (after unfriend).
     func unsubscribeFriend(_ friendID: String) {
-        guard let me = myID else { return }
-        let convo = MQTTTopics.conversation(me, friendID)
         let presence = MQTTTopics.presence(friendID)
-        let handshake = MQTTTopics.handshake(me, friendID)
-        desired.forget(convo)
-        desired.forget(presence)
-        desired.forget(handshake)
-        backend.unsubscribe(handshake)
-        backend.unsubscribe(convo)
-        backend.unsubscribe(presence)
+        var topics = [presence]
+        if let t = followed.removeValue(forKey: friendID) {
+            topics += [t.conversation, t.handshake]
+        }
+        for t in topics {
+            desired.forget(t)
+            backend.unsubscribe(t)
+        }
         onlineFriends.remove(friendID)
     }
 
     // MARK: Publish
 
     /// Publish an end-to-end-encrypted payload to a friend's conversation topic.
-    func send(_ payload: Data, toFriendID friendID: String) {
-        guard let me = myID else { return }
-        backend.publish(MQTTTopics.conversation(me, friendID), payload: payload,
+    func send(_ payload: Data, on topics: FriendTopics) {
+        guard myID != nil else { return }
+        backend.publish(topics.conversation, payload: payload,
                         qos: 1, retained: false, onWrite: nil)
     }
 
@@ -288,8 +300,8 @@ actor MQTTService {
     /// new friendship is exactly that — the peer has never subscribed to the
     /// conversation topic. Every client subscribes to its own inbox on connect
     /// with `cleanSession = false`, so the broker QUEUES for an offline peer
-    /// instead of discarding. The friendship grant carries `publish` on the
-    /// peer's inbox (DB.grantFriendTopic); without it the broker refuses.
+    /// instead of discarding. The broker lets anyone publish to an inbox
+    /// (acl.conf); the recipient's router is what refuses a stranger's `init`.
     func sendToInbox(_ payload: Data, peerID: String) {
         backend.publish(MQTTTopics.inbox(peerID), payload: payload,
                         qos: 1, retained: false, onWrite: nil)
@@ -300,9 +312,9 @@ actor MQTTService {
     /// QoS 1, like everything that matters: a challenge issued while the peer is
     /// offline is queued rather than dropped, and the exchange completes the
     /// moment they come back.
-    func publishHandshake(_ payload: Data, toFriendID friendID: String) {
-        guard let me = myID else { return }
-        backend.publish(MQTTTopics.handshake(me, friendID), payload: payload,
+    func publishHandshake(_ payload: Data, on topics: FriendTopics) {
+        guard myID != nil else { return }
+        backend.publish(topics.handshake, payload: payload,
                         qos: 1, retained: false, onWrite: nil)
     }
 
@@ -387,15 +399,13 @@ actor MQTTService {
             ProtocolLog.record(.subscribeRefused(topic: kind,
                                                  peer: MQTTTopics.peer(in: topic),
                                                  code: Int(code)))
-            // STOP ASKING. `deny_action = disconnect` means a refusal also drops
-            // the link, so a topic left in `desiredTopics` is re-offered on the
-            // next connect and drops it again — a loop that survives every
-            // reconnect and cannot resolve itself, because the only thing that
-            // would grant the topic is an action the user cannot reach while the
-            // app is thrashing.
+            // STOP ASKING. Under the old `deny_action = disconnect` a refusal
+            // also dropped the link, so a topic left in `desiredTopics` looped
+            // every reconnect. The broker only refuses the packet now, but a
+            // refused topic is still not worth re-offering on every connect.
             //
             // Forgetting it is safe: `subscribeFriend` runs on every directory
-            // sync, so the moment the grant exists the topic is asked for again.
+            // sync, with whatever topics the server currently hands out.
             desired.refused(topic)
 
         case .publishReplayed(let topic, let attempt):

@@ -292,20 +292,15 @@ final class ChatSession: ObservableObject {
                  + "\(unopened.count) without a session"
                  + (unopened.isEmpty ? "" : " — \(unopened.map(\.username).joined(separator: ", "))"))
             // ACCEPTED friendships only. `sync()` returns pending invites in the
-            // same array, and the conversation + presence grants are written on
-            // ACCEPT (`/friends/accept` → grantFriendTopic), not on invite. So
-            // subscribing for an unaccepted inviter asks the broker for a topic
-            // this account has no `mqtt_acl` row for — and with
-            // `deny_action = disconnect` the refusal does not merely fail, it
-            // drops the link. The topic stayed in `desiredTopics`, so every
-            // reconnect asked again: connect, subscribe, denied, dropped,
-            // forever.
-            //
-            // That is the whole "someone adds you and your app starts looping"
-            // report. The invitee never even reached the screen where they could
-            // accept, which was the one action that would have created the grant.
-            let subscribable = friends.filter { $0.inviteStatus == .accepted }
-            await mqtt.subscribeFriends(subscribable.map { $0.peerID })
+            // same array, and a friendship's topic ids exist only once it is
+            // accepted — /friends carries them, /friends/invites does not. A
+            // contact with no ids yet has nothing to subscribe to; the next sync
+            // after acceptance fills them in.
+            let subscribable = friends.compactMap { friend -> (id: String, topics: FriendTopics)? in
+                guard friend.inviteStatus == .accepted, let topics = friend.topics else { return nil }
+                return (id: friend.peerID, topics: topics)
+            }
+            await mqtt.subscribeFriends(subscribable)
             // No handshake sweep here any more. A session opens when there is a
             // message to send, from the peer's PUBLISHED prekeys — so a contact
             // with nothing to say costs no frames, no biometric prompt on the
@@ -583,6 +578,9 @@ final class ChatSession: ObservableObject {
     /// `cleanSession = false`, so the broker queues it for an offline peer.
     func publish(_ envelope: ConversationFrame, to friend: Friend) {
         let id = friend.peerID
+        // Read here, on the main actor: `Friend` is a SwiftData model and does
+        // not cross into the Task below. The value does.
+        let topics = friend.topics
         guard !id.isEmpty else { return }
         guard let data = envelope.encoded() else {
             // Encoding a struct of Strings and Ints cannot fail in practice, but
@@ -596,22 +594,23 @@ final class ChatSession: ObservableObject {
             if isInit {
                 await mqtt.sendToInbox(data, peerID: id)
                 ProtocolLog.record(.initPublished(to: id))
+            } else if let topics {
+                await mqtt.send(data, on: topics)
             } else {
-                await mqtt.send(data, toFriendID: id)
+                dlog("[ChatSession] ❌ no topic ids for \(id.prefix(8))… yet — msg not sent (next sync names them)")
             }
         }
     }
 
     /// Publish a challenge or a proof on the handshake topic.
     ///
-    /// A separate topic from the conversation, and separate from the inbox: every
-    /// friend may publish to an inbox, so a challenge sitting there would be
+    /// A separate topic from the conversation, and separate from the inbox:
+    /// anyone may publish to an inbox, so a challenge sitting there would be
     /// readable — and forgeable — by exactly the attacker the exchange exists to
-    /// stop. Only the two members are granted this one.
+    /// stop. Only the two members are handed this topic's id.
     func publishHandshake(_ bytes: Data, to friend: Friend) {
-        let id = friend.peerID
-        guard !id.isEmpty, !myID.isEmpty else { return }
-        Task { await mqtt.publishHandshake(bytes, toFriendID: id) }
+        guard !friend.peerID.isEmpty, !myID.isEmpty, let topics = friend.topics else { return }
+        Task { await mqtt.publishHandshake(bytes, on: topics) }
     }
 
     /// Seal, persist and publish one message, without a view in the loop.

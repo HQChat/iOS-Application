@@ -44,9 +44,10 @@
 //  ── What it does not defend against ─────────────────────────────────────────
 //  A relay. Somebody who can both see the challenge and reach the real peer
 //  could forward it. What stops that here is the transport: the exchange runs on
-//  `h/{friendshipHash}`, which only the two members are granted, so a friend of
-//  ours with no grant on it never sees the challenge. A malicious broker still
-//  can, and is outside what any of this defends — it writes the ACL.
+//  `hs/{handshake_id}`, a random id only the two members are handed, and the
+//  broker refuses wildcard subscriptions — so a friend of ours, who was never
+//  given that id, never sees the challenge. A malicious broker (or server) still
+//  can, and is outside what any of this defends — it mints the ids.
 //
 
 import Foundation

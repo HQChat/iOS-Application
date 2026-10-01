@@ -18,7 +18,7 @@ final class Friend {
     var username: String
 
     /// The contact's CLIENT ID — `sha256(lowercase-hex(publicKey))`, 64 hex
-    /// characters. This is what the directory, the topics, the ACL and the
+    /// characters. This is what the directory, the per-user topics and the
     /// envelope's `sender` all name them by.
     ///
     /// Empty is a real state: a row created when an invite is SENT knows only a
@@ -29,6 +29,22 @@ final class Friend {
     /// it from `publicKey`, which every existing row already has — the id is
     /// derivable locally, so no contact and no history is lost to this change.
     var peerID: String = ""
+
+    /// The friendship's topic ids, from `/friends`: the conversation is
+    /// `cv/{convoTopicID}` and the handshake `hs/{handshakeTopicID}`. Random per
+    /// friendship and handed only to its two members — knowing them is the
+    /// broker's whole check on a conversation — so they cannot be derived and
+    /// are nil until a directory sync delivers them. A re-friend mints new ones;
+    /// the sync overwrites these, and the old topics go quiet.
+    ///
+    /// Optional, which is all SwiftData's lightweight migration needs.
+    var convoTopicID: String?
+    var handshakeTopicID: String?
+
+    /// Both topics, or nil before a sync has named them.
+    var topics: FriendTopics? {
+        FriendTopics(convoID: convoTopicID, handshakeID: handshakeTopicID)
+    }
 
     /// The contact's identity public key, 7237 bytes — empty until fetched.
     ///

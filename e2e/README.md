@@ -17,9 +17,9 @@ stub, which is what makes this end-to-end rather than a state-machine test.
 The script:
 
 1. **Friend request** — each side pins the other's key, and a key that does not
-   hash to the id that named it is refused. The `mqtt_acl` grant set is modelled,
-   including the handshake topic, which is granted to the two members and nobody
-   else.
+   hash to the id that named it is refused. Who holds which topic id is
+   modelled, including the handshake topic, which only the two members are
+   handed.
 2. **First contact** — an `init` to the peer's inbox, which is *held rather than
    opened*: it proves nothing about who sent it. The receiver challenges, the
    sender proves possession of its identity key, and only then does the message
